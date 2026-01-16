@@ -31,7 +31,7 @@ export const checkSupabaseConnection = async () => {
 export const saveEnrichedLead = async (lead: LeadRecord) => {
   if (!supabase || !lead.enriched) return null;
 
-  const e = lead.enriched as any; // Cast to access dynamic Infy view properties safely
+  const e = lead.enriched as InfyEnrichedData;
 
   try {
     // 1. CREATE PARENT (infy_raw_leads)
@@ -42,6 +42,7 @@ export const saveEnrichedLead = async (lead: LeadRecord) => {
       last_name: lead.input.lastName,
       firm_name: lead.input.firmName,
       declared_title: lead.input.declaredTitle,
+      website: lead.input.website || null,
       job_id: e.job_id,
       tenant_id: e.tenant_id || "INSTITUTIONAL-DEFAULT",
       project_id: e.project_id || "REFINERY-MAIN",
@@ -66,9 +67,12 @@ export const saveEnrichedLead = async (lead: LeadRecord) => {
       first_name: e.first_name,
       last_name: e.last_name,
       firm_name: e.firm_name,
+      website: e.website || lead.input.website || null,
       standard_title: e.standard_title,
-      job_level_id: e.job_level ? `L${e.job_level}` : (e.job_level_id || null),
-      function_taxonomy_id: e.function_taxonomy_id || (e.f2 ? "FT-DYNAMIC" : null),
+      job_level_id: e.job_level_id || (e.job_level ? `L${e.job_level}` : null),
+      function_taxonomy_id: e.function_taxonomy_id,
+      industry_id: e.industry_id,
+      salutation: e.salutation || null,
       linkedin_url: e.linkedin_url,
       intent_signal: e.intent_signal || 'Low',
       intent_score: e.intent_score || 0,
@@ -130,7 +134,7 @@ function formatSupabaseRows(data: any[] | null): LeadRecord[] {
         lastName: row.last_name || '',
         firmName: row.firm_name || '',
         declaredTitle: row.declared_title || row.standard_title || '',
-        websiteUrl: row.linkedin_url || ''
+        website: row.website || ''
       },
       state: 'completed',
       progress: 100,
@@ -141,7 +145,7 @@ function formatSupabaseRows(data: any[] | null): LeadRecord[] {
         job_level: row.job_level_id 
           ? (typeof row.job_level_id === 'string' ? parseInt(row.job_level_id.replace('L', '')) : row.job_level_id)
           : null
-      } as any,
+      } as InfyEnrichedData,
       createdAt: new Date(row.created_at || Date.now()).getTime(),
       completedAt: new Date(row.last_synced_at || row.created_at || Date.now()).getTime()
     };

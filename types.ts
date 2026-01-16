@@ -7,7 +7,7 @@ export interface LeadInput {
   lastName: string;
   firmName: string;
   declaredTitle: string;
-  websiteUrl?: string;
+  website?: string;
 }
 
 export interface InfyEnrichedData {
@@ -17,6 +17,7 @@ export interface InfyEnrichedData {
   first_name: string;
   last_name: string;
   firm_name: string;
+  website: string | null;
   standard_title: string | null;
   salutation?: string | null;
   job_level: number | null;

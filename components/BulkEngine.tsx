@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react'
 import { LeadInput, LeadRecord } from '../types'
 declare const XLSX: any
@@ -23,7 +22,7 @@ export const BulkEngine: React.FC<Props> = ({ onBulkAdd, isProcessing }) => {
         lastName: p[2]?.trim(),
         firmName: p[3]?.trim(),
         declaredTitle: p[4]?.trim(),
-        websiteUrl: p[5]?.trim()
+        website: p[5]?.trim()
       }
     }).filter(l => l.email && l.firstName && l.firmName)
 
@@ -47,7 +46,7 @@ export const BulkEngine: React.FC<Props> = ({ onBulkAdd, isProcessing }) => {
         lastName: String(r[2] || ''), 
         firmName: String(r[3] || ''), 
         declaredTitle: String(r[4] || ''), 
-        websiteUrl: String(r[5] || '')
+        website: String(r[5] || '')
       })).filter(l => l.email && l.firstName)
       onBulkAdd(parsed)
     }

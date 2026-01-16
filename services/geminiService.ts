@@ -47,7 +47,7 @@ export const resolveIdentityRefinery = async (
   declaredTitle: string,
   serpData: any,
   rawLeadId: string,
-  leadInfo: { email: string; firstName: string; lastName: string; firmName: string; websiteUrl?: string }
+  leadInfo: { email: string; firstName: string; lastName: string; firmName: string; website?: string }
 ): Promise<InfyEnrichedData> => {
   const ai = getAiClient();
   const linkedinUrl = serpData.raw_output?.includes('linkedin.com/in/') 
@@ -122,6 +122,7 @@ TAXONOMIES PROVIDED:
     first_name: leadInfo.firstName,
     last_name: leadInfo.lastName,
     firm_name: leadInfo.firmName,
+    website: leadInfo.website || null,
     standard_title: resolution.standard_title || null,
     job_level: resolution.job_level || null,
     job_role: resolution.job_role || null,
