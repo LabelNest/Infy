@@ -35,7 +35,6 @@ const App: React.FC = () => {
       const vaultData = await fetchVaultLeads();
       if (vaultData && vaultData.length > 0) {
         setLeads(prev => {
-          // Merge logic to avoid duplicates
           const existingIds = new Set(prev.map(l => l.id));
           const newLeadsFromVault = vaultData.filter(v => !existingIds.has(v.id));
           return [...newLeadsFromVault, ...prev];
@@ -63,10 +62,8 @@ const App: React.FC = () => {
       const updateLead = async (updates: Partial<LeadRecord>) => {
         setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, ...updates } : l));
         
-        // CRITICAL: We await the save to ensure connection is checked
         if (updates.state === 'completed') {
           const finalRecord = { ...lead, ...updates };
-          console.log(`Infy Intelligence cycle complete for ${lead.id}. Initiating Vault Sync...`);
           await saveEnrichedLead(finalRecord as LeadRecord);
         }
       };
@@ -85,7 +82,7 @@ const App: React.FC = () => {
             firstName: lead.input.firstName, 
             lastName: lead.input.lastName, 
             firmName: lead.input.firmName, 
-            websiteUrl: lead.input.websiteUrl 
+            website: lead.input.website 
           }
         );
 
@@ -120,16 +117,10 @@ const App: React.FC = () => {
     const flattened = dataToExport.map(l => {
       const e = l.enriched!;
       const exportRow: any = {};
-      
       Object.keys(e).forEach(key => {
         const val = (e as any)[key];
-        if (typeof val === 'object' && val !== null) {
-          exportRow[key] = JSON.stringify(val);
-        } else {
-          exportRow[key] = val;
-        }
+        exportRow[key] = (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
       });
-      
       return exportRow;
     });
 
@@ -194,7 +185,7 @@ const App: React.FC = () => {
             <section className="col-span-12 lg:col-span-8 space-y-6">
               <h2 className="text-[11px] font-black text-slate-800 uppercase tracking-[0.4em] pb-4 border-b-2 border-slate-200">Processing Floor</h2>
               {leads.filter(l => l.state !== 'completed').map(lead => (
-                <LeadCard key={lead.id} lead={lead} onRetry={(id) => setLeads(prev => prev.map(l => l.id === id ? { ...l, state: 'queued' } : l))} />
+                <LeadCard key={lead.id} lead={lead} onRetry={(id: string) => setLeads(prev => prev.map(l => l.id === id ? { ...l, state: 'queued' } : l))} />
               ))}
               {leads.filter(l => l.state === 'completed').length > 0 && (
                 <div className="mt-12 pt-8 border-t border-slate-200">
@@ -217,7 +208,7 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-6">
                {leads.filter(l => l.state === 'completed').map(lead => (
-                 <LeadCard key={lead.id} lead={lead} onRetry={() => {}} showCheckbox isSelected={selectedIds.has(lead.id)} onSelect={(id) => setSelectedIds(prev => {const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n;})} />
+                 <LeadCard key={lead.id} lead={lead} onRetry={() => {}} showCheckbox isSelected={selectedIds.has(lead.id)} onSelect={(id: string) => setSelectedIds(prev => {const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n;})} />
                ))}
                {leads.filter(l => l.state === 'completed').length === 0 && (
                  <div className="text-center py-32">
