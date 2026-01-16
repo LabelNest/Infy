@@ -1,15 +1,20 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { INFY_JOB_LEVELS, INFY_FUNCTION_TAXONOMY, INFY_INDUSTRIES } from "../constants";
-import { EnrichedData } from "../types";
+import { InfyEnrichedData } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAiClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey || apiKey === '') {
+    throw new Error("CRITICAL: Gemini API_KEY is missing. Please set it in Vercel Environment Variables.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 /**
  * Stage 2: SERP PROCESSING
- * Uses Google Search to find professional evidence.
  */
 export const performDiscovery = async (firstName: string, lastName: string, firmName: string) => {
+  const ai = getAiClient();
   const query = `site:linkedin.com/in "${firstName} ${lastName}" "${firmName}" OR "${firstName} ${lastName}" corporate bio official ${firmName}`;
   
   const response = await ai.models.generateContent({
@@ -24,7 +29,6 @@ export const performDiscovery = async (firstName: string, lastName: string, firm
 
   try {
     const text = response.text || "{}";
-    // We also want to capture the grounding metadata specifically
     const results = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     return {
       query,
@@ -38,14 +42,14 @@ export const performDiscovery = async (firstName: string, lastName: string, firm
 
 /**
  * Stage 3: AI RESOLUTION
- * Maps raw evidence to standardized taxonomies.
  */
 export const resolveIdentityRefinery = async (
   declaredTitle: string,
   serpData: any,
   rawLeadId: string,
-  leadInfo: { email: string; firstName: string; lastName: string; firmName: string; website?: string }
-): Promise<EnrichedData> => {
+  leadInfo: { email: string; firstName: string; lastName: string; firmName: string; websiteUrl?: string }
+): Promise<InfyEnrichedData> => {
+  const ai = getAiClient();
   const linkedinUrl = serpData.raw_output?.includes('linkedin.com/in/') 
     ? serpData.raw_output.match(/https?:\/\/[a-z]{2,3}\.linkedin\.com\/in\/[a-zA-Z0-9-]+\/?/)?.[0] || null
     : null;
@@ -108,7 +112,6 @@ TAXONOMIES PROVIDED:
 
   const resolution = JSON.parse(response.text || "{}");
   
-  // Final Formatting for infy_export_view
   const jobId = `INFY-REQ-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
   const now = new Date().toISOString();
 
@@ -153,6 +156,7 @@ TAXONOMIES PROVIDED:
 };
 
 export const resolveCountryFromState = async (stateInput: string) => {
+  const ai = getAiClient();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: `Country for ${stateInput}? Output JSON: {"country": ""}`,

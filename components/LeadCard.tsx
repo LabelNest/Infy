@@ -80,7 +80,7 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
           <div>
             <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full"></span>
-              Refinery Taxonomy
+              Infy Refinery Taxonomy
             </h4>
             <div className="grid grid-cols-4 gap-8">
               <DataGroup label="F0: Master Function" value={lead.enriched.f0} />
@@ -90,7 +90,7 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
               <DataGroup label="Job Level" value={lead.enriched.job_level !== null ? `L${lead.enriched.job_level}` : null} />
               <DataGroup label="Job Role" value={lead.enriched.job_role} />
               <DataGroup label="Intent Signal" value={lead.enriched.intent_signal} sub={`${lead.enriched.intent_score}% confidence`} />
-              <DataGroup label="Refinery ID" value={lead.enriched.job_id} />
+              <DataGroup label="Infy Req ID" value={lead.enriched.job_id} />
             </div>
           </div>
 

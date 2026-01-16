@@ -26,7 +26,7 @@ export default async function handler(req, res) {
       .eq('id', raw_lead_id)
       .single()
 
-    if (rawError || !lead) throw new Error('Raw lead not found')
+    if (rawError || !lead) throw new Error('Infy raw lead not found')
 
     const serpQuery = `${lead.first_name} ${lead.last_name} ${lead.firm_name}`
     const serpRes = await fetch(
@@ -47,7 +47,7 @@ export default async function handler(req, res) {
     ])
 
     const systemInstruction = `
-You are the Institutional Identity Resolution Engine for the Infosys Intelligence Vault.
+You are the Institutional Identity Resolution Engine for the Infy Intelligence Vault.
 Your task is to generate the "standard_title".
 
 EVIDENCE HIERARCHY:

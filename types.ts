@@ -1,4 +1,3 @@
-
 export type EnrichmentStage = 'QUEUED' | 'PROCESSING_SERP' | 'PROCESSING_AI' | 'COMPLETED' | 'ERROR';
 export type EnrichmentState = 'queued' | 'running' | 'completed' | 'error';
 
@@ -8,24 +7,28 @@ export interface LeadInput {
   lastName: string;
   firmName: string;
   declaredTitle: string;
-  website?: string;
+  websiteUrl?: string;
 }
 
-export interface EnrichedData {
-  job_id: string;                // Human-readable ID
-  raw_lead_id: string;           // UUID
+export interface InfyEnrichedData {
+  job_id: string;
+  raw_lead_id: string;
   email: string;
   first_name: string;
   last_name: string;
   firm_name: string;
   standard_title: string | null;
-  job_level: number | null;      // INTEGER
+  salutation?: string | null;
+  job_level: number | null;
+  job_level_id?: string | null;
   job_role: string | null;
+  function_taxonomy_id?: string | null;
   f0: string | null;
   f1: string | null;
   f2: string | null;
   vertical: string | null;
   industry: string | null;
+  industry_id?: string | null;
   city: string | null;
   state: string | null;
   zip: string | null;
@@ -33,8 +36,8 @@ export interface EnrichedData {
   region: string | null;
   phone: string | null;
   linkedin_url: string | null;
-  revenue: string | null;        // Excluded from completeness score
-  intent_score: number;          // DOUBLE
+  revenue: string | null;
+  intent_score: number;
   intent_signal: "Low" | "Medium" | "High";
   is_verified: boolean;
   tenant_id: string;
@@ -57,7 +60,7 @@ export interface LeadRecord {
   state: EnrichmentState;
   progress: number;
   last_stage: EnrichmentStage;
-  enriched: EnrichedData | null;
+  enriched: InfyEnrichedData | null;
   error?: string;
   createdAt: number;
   completedAt?: number;

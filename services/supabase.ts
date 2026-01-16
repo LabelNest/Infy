@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { LeadRecord } from '../types';
+import { LeadRecord, InfyEnrichedData } from '../types';
 
 // Connection details for the LabelNest Refinery project
 const supabaseUrl = 'https://evugaodpzepyjonlrptn.supabase.co';
@@ -8,16 +8,16 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * Diagnostic: Checks if the tables are reachable.
+ * Diagnostic: Checks if the Infy tables are reachable.
  */
 export const checkSupabaseConnection = async () => {
   try {
     const { error } = await supabase.from('infy_enriched_leads').select('count', { count: 'exact', head: true });
     if (error) {
-      console.error('Supabase Connectivity Issue:', error.message);
+      console.error('Supabase Infy Connectivity Issue:', error.message);
       return false;
     }
-    console.log('Supabase: Connection Verified.');
+    console.log('Supabase: Infy Connection Verified.');
     return true;
   } catch (err) {
     return false;
@@ -26,12 +26,12 @@ export const checkSupabaseConnection = async () => {
 
 /**
  * Stage 4: FINALIZATION
- * Persists data by strictly following the parent-child relationship in base tables.
+ * Persists data strictly using "infy_" prefixed base tables.
  */
 export const saveEnrichedLead = async (lead: LeadRecord) => {
   if (!supabase || !lead.enriched) return null;
 
-  const e = lead.enriched;
+  const e = lead.enriched as any; // Cast to access dynamic Infy view properties safely
 
   try {
     // 1. CREATE PARENT (infy_raw_leads)
@@ -54,7 +54,7 @@ export const saveEnrichedLead = async (lead: LeadRecord) => {
       .upsert(parentRecord, { onConflict: 'id' });
 
     if (pError) {
-      console.error('Parent Table Sync Failed:', pError.message);
+      console.error('infy_raw_leads Sync Failed:', pError.message);
       return null; 
     }
 
@@ -85,18 +85,18 @@ export const saveEnrichedLead = async (lead: LeadRecord) => {
       .upsert(enrichedRecord, { onConflict: 'raw_lead_id' });
         
     if (eError) {
-      console.error('Enriched Table Sync Failed:', eError.message);
+      console.error('infy_enriched_leads Sync Failed:', eError.message);
     } else {
-      console.log(`Vault Sync Success for ${lead.id}`);
+      console.log(`Infy Vault Sync Success for ${lead.id}`);
     }
   } catch (err) {
-    console.error('Vault Sync Critical Error:', err);
+    console.error('Infy Vault Sync Critical Error:', err);
   }
 };
 
 /**
  * FETCHING LOGIC
- * Targeted at 'infy_export_view' to provide the most complete, joined dataset.
+ * Pulls data exclusively from 'infy_export_view'.
  */
 export const fetchVaultLeads = async (): Promise<LeadRecord[]> => {
   try {
@@ -106,7 +106,7 @@ export const fetchVaultLeads = async (): Promise<LeadRecord[]> => {
       .order('created_at', { ascending: false });
         
     if (error) {
-      console.error('Vault View Fetch Failed:', error.message);
+      console.error('infy_export_view Fetch Failed:', error.message);
       return [];
     }
     return formatSupabaseRows(data);
@@ -116,8 +116,7 @@ export const fetchVaultLeads = async (): Promise<LeadRecord[]> => {
 };
 
 /**
- * Formats flat view rows into LeadRecord objects.
- * Preserves all view columns in the .enriched property.
+ * Formats flat infy_export_view rows into LeadRecord objects.
  */
 function formatSupabaseRows(data: any[] | null): LeadRecord[] {
   return (data || []).map(row => {
@@ -136,7 +135,6 @@ function formatSupabaseRows(data: any[] | null): LeadRecord[] {
       state: 'completed',
       progress: 100,
       last_stage: 'COMPLETED',
-      // We pass the entire row into 'enriched' so the Export logic sees all View columns
       enriched: {
         ...row,
         raw_lead_id: leadId,

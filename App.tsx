@@ -3,13 +3,13 @@ import { LeadForm } from './components/LeadForm';
 import { LeadCard } from './components/LeadCard';
 import { BulkEngine } from './components/BulkEngine';
 import { StateMappingTool } from './components/StateMappingTool';
-import { LeadRecord, LeadInput, EnrichedData } from './types';
+import { LeadRecord, LeadInput, InfyEnrichedData } from './types';
 import { performDiscovery, resolveIdentityRefinery } from './services/geminiService';
 import { saveEnrichedLead, fetchVaultLeads, checkSupabaseConnection } from './services/supabase';
 
 declare const XLSX: any;
 
-export const calculateCompleteness = (enriched: EnrichedData | null): number => {
+export const calculateCompleteness = (enriched: InfyEnrichedData | null): number => {
   if (!enriched) return 0;
   
   const fieldsToExclude = ['revenue', 'raw_evidence_json'];
@@ -41,7 +41,7 @@ const App: React.FC = () => {
           return [...newLeadsFromVault, ...prev];
         });
       }
-    } catch (e) { console.error("Vault load failed:", e); }
+    } catch (e) { console.error("Infy Vault load failed:", e); }
   };
 
   useEffect(() => {
@@ -66,7 +66,7 @@ const App: React.FC = () => {
         // CRITICAL: We await the save to ensure connection is checked
         if (updates.state === 'completed') {
           const finalRecord = { ...lead, ...updates };
-          console.log(`Intelligence cycle complete for ${lead.id}. Initiating Vault Sync...`);
+          console.log(`Infy Intelligence cycle complete for ${lead.id}. Initiating Vault Sync...`);
           await saveEnrichedLead(finalRecord as LeadRecord);
         }
       };
@@ -98,7 +98,7 @@ const App: React.FC = () => {
         });
 
       } catch (err: any) {
-        console.error("Pipeline Error:", err.message);
+        console.error("Infy Pipeline Error:", err.message);
         updateLead({ 
           state: 'error', 
           last_stage: 'ERROR', 
@@ -117,13 +117,10 @@ const App: React.FC = () => {
     const dataToExport = leads.filter(l => l.state === 'completed' && (selectedIds.size === 0 || selectedIds.has(l.id)));
     if (dataToExport.length === 0) return;
 
-    // DYNAMIC EXPORT: Instead of hardcoding keys, we take everything in the 'enriched' object.
-    // This ensures that all columns from infy_export_view are included automatically in the XLSX.
     const flattened = dataToExport.map(l => {
       const e = l.enriched!;
       const exportRow: any = {};
       
-      // Copy all properties from the enriched object
       Object.keys(e).forEach(key => {
         const val = (e as any)[key];
         if (typeof val === 'object' && val !== null) {
@@ -139,7 +136,7 @@ const App: React.FC = () => {
     const ws = XLSX.utils.json_to_sheet(flattened);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "infy_export_view");
-    XLSX.writeFile(wb, `Institutional_Intelligence_Refinery_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `Infy_Intelligence_Refinery_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handleAddLead = (input: LeadInput) => {
@@ -170,7 +167,7 @@ const App: React.FC = () => {
               <div className="flex items-center gap-2 mt-1">
                 <div className={`w-2 h-2 rounded-full ${isEngineActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`}></div>
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                  Intelligence Refinery {isEngineActive ? 'Active' : 'Standby'}
+                  Infy Intelligence Refinery {isEngineActive ? 'Active' : 'Standby'}
                 </span>
               </div>
             </div>
@@ -212,7 +209,7 @@ const App: React.FC = () => {
         ) : (
           <div className="bg-[#000B14] rounded-[48px] p-12 min-h-[700px] border border-white/5">
             <div className="flex justify-between items-center mb-12 border-b border-white/10 pb-10">
-               <div><h2 className="text-4xl font-black text-white uppercase tracking-tighter">Institutional Vault</h2><p className="text-indigo-400 text-[10px] font-black uppercase tracking-[0.4em] mt-3">Verified Intelligence Feed</p></div>
+               <div><h2 className="text-4xl font-black text-white uppercase tracking-tighter">Infy Vault</h2><p className="text-indigo-400 text-[10px] font-black uppercase tracking-[0.4em] mt-3">Verified Intelligence Feed</p></div>
                <div className="flex gap-4">
                  <button onClick={loadVault} className="bg-white/5 hover:bg-white/10 text-white px-8 py-5 rounded-2xl text-[11px] font-black uppercase border border-white/10">Refresh Vault</button>
                  <button onClick={handleExport} className="bg-indigo-600 text-white px-10 py-5 rounded-2xl text-[11px] font-black uppercase shadow-2xl">Bulk Export</button>
@@ -224,7 +221,7 @@ const App: React.FC = () => {
                ))}
                {leads.filter(l => l.state === 'completed').length === 0 && (
                  <div className="text-center py-32">
-                   <p className="text-slate-500 font-black text-xs uppercase tracking-[0.5em]">No Assets Locked in Vault</p>
+                   <p className="text-slate-500 font-black text-xs uppercase tracking-[0.5em]">No Assets Locked in Infy Vault</p>
                  </div>
                )}
             </div>
