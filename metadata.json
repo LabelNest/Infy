@@ -1,0 +1,5 @@
+{
+  "name": "Enrichment & Job Mapping Tool",
+  "description": "An advanced lead enrichment application that uses Google Search and Gemini AI to fetch professional details, map job roles to master business functions, and categorize job levels.",
+  "requestFramePermissions": []
+}
