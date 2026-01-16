@@ -4,7 +4,7 @@ import { LeadCard } from './components/LeadCard';
 import { BulkEngine } from './components/BulkEngine';
 import { StateMappingTool } from './components/StateMappingTool';
 import { LeadRecord, LeadInput, InfyEnrichedData } from './types';
-import { performDiscovery, resolveIdentityRefinery } from './services/geminiService';
+import { resolveIdentityRefinery } from './services/geminiService';
 import { saveEnrichedLead, fetchVaultLeads, checkSupabaseConnection } from './services/supabase';
 
 declare const XLSX: any;
@@ -69,13 +69,11 @@ const App: React.FC = () => {
       };
 
       try {
-        updateLead({ state: 'running', progress: 25, last_stage: 'PROCESSING_SERP' });
-        const serpData = await performDiscovery(lead.input.firstName, lead.input.lastName, lead.input.firmName);
-
-        updateLead({ progress: 75, last_stage: 'PROCESSING_AI' });
+        updateLead({ state: 'running', progress: 10, last_stage: 'PROCESSING_SERP' });
+        
+        // Single unified refinery call that handles SERP internally
         const enriched = await resolveIdentityRefinery(
           lead.input.declaredTitle,
-          serpData,
           lead.id,
           { 
             email: lead.input.email, 

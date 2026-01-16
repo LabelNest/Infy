@@ -49,7 +49,7 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
                 </a>
               )}
-              {isCompleted && <span className="text-[8px] px-2 py-0.5 rounded font-black bg-slate-900 text-white uppercase tracking-widest">ASSET LOCKED</span>}
+              {isCompleted && <span className="text-[8px] px-2 py-0.5 rounded font-black bg-slate-900 text-white uppercase tracking-widest">GOVERNED ASSET</span>}
             </div>
             <div className="flex items-center gap-4 mt-1">
               <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{lead.input.firmName}</span>
@@ -80,47 +80,47 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
           <div>
             <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full"></span>
-              Infy Refinery Taxonomy
+              Institutional Taxonomy
             </h4>
             <div className="grid grid-cols-4 gap-8">
               <DataGroup label="F0: Master Function" value={lead.enriched.f0} />
               <DataGroup label="F1: Sub-Function" value={lead.enriched.f1} />
               <DataGroup label="F2: Specialty" value={lead.enriched.f2} />
+              <DataGroup label="Role ID" value={lead.enriched.job_role_id} />
               <DataGroup label="Standard Title" value={lead.enriched.standard_title} />
-              <DataGroup label="Job Level" value={lead.enriched.job_level !== null ? `L${lead.enriched.job_level}` : null} />
-              <DataGroup label="Job Role" value={lead.enriched.job_role} />
-              <DataGroup label="Intent Signal" value={lead.enriched.intent_signal} sub={`${lead.enriched.intent_score}% confidence`} />
-              <DataGroup label="Infy Req ID" value={lead.enriched.job_id} />
+              <DataGroup label="Level ID" value={lead.enriched.job_level_id} />
+              <DataGroup label="Job Level" value={String(lead.enriched.job_level)} />
+              <DataGroup label="Taxonomy ID" value={lead.enriched.function_taxonomy_id} />
             </div>
           </div>
 
           <div>
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
-              Firmographics & Location
+              Governed Geographics
             </h4>
             <div className="grid grid-cols-4 gap-8">
+              <DataGroup label="Region" value={lead.enriched.region} />
+              <DataGroup label="Country" value={lead.enriched.country} />
+              <DataGroup label="State" value={lead.enriched.state} />
+              <DataGroup label="City" value={lead.enriched.city} />
+              <DataGroup label="ZIP Code" value={lead.enriched.zip} />
               <DataGroup label="Vertical" value={lead.enriched.vertical} />
               <DataGroup label="Industry" value={lead.enriched.industry} />
-              <DataGroup label="Revenue" value={lead.enriched.revenue} />
-              <DataGroup label="Firm Name" value={lead.enriched.firm_name} />
-              <DataGroup label="Firm Website" value={lead.enriched.website} />
-              <DataGroup label="City" value={lead.enriched.city} />
-              <DataGroup label="State / Province" value={lead.enriched.state} />
-              <DataGroup label="Country" value={lead.enriched.country} />
+              <DataGroup label="Industry ID" value={lead.enriched.industry_id} />
             </div>
           </div>
 
           <div>
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
-              System Metadata
+              Audit Metadata
             </h4>
             <div className="grid grid-cols-4 gap-8">
-              <DataGroup label="Created At" value={new Date(lead.enriched.created_at).toLocaleString()} />
-              <DataGroup label="Resolution Status" value={lead.enriched.resolution_status} />
-              <DataGroup label="Last Synced" value={lead.enriched.last_synced_at ? new Date(lead.enriched.last_synced_at).toLocaleString() : 'Never'} />
-              <DataGroup label="Project ID" value={lead.enriched.project_id} />
+              <DataGroup label="Intent" value={lead.enriched.intent_signal} sub={`${lead.enriched.intent_score}% score`} />
+              <DataGroup label="Resolution" value={lead.enriched.resolution_status} />
+              <DataGroup label="Last Synced" value={new Date(lead.enriched.last_synced_at).toLocaleString()} />
+              <DataGroup label="Asset ID" value={lead.enriched.job_id} />
             </div>
           </div>
         </div>
@@ -133,7 +133,7 @@ const DataGroup = ({ label, value, sub }: { label: string, value: string | null 
   <div className="min-w-0">
     <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">{label}</label>
     <div className={`text-[11px] font-black uppercase truncate ${!value ? 'text-slate-300' : 'text-slate-800'}`}>
-      {value || 'Not Resolved'}
+      {value || 'NULL'}
     </div>
     {sub && value && <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">{sub}</div>}
   </div>
