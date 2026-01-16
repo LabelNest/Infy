@@ -5,7 +5,7 @@ import { BulkEngine } from './components/BulkEngine';
 import { StateMappingTool } from './components/StateMappingTool';
 import { LeadRecord, LeadInput, EnrichedData } from './types';
 import { performDiscovery, resolveIdentityRefinery } from './services/geminiService';
-import { saveEnrichedLead, fetchVaultLeads } from './services/supabase';
+import { saveEnrichedLead, fetchVaultLeads, checkSupabaseConnection } from './services/supabase';
 
 declare const XLSX: any;
 
@@ -30,14 +30,23 @@ const App: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const processingRef = useRef(false);
 
+  const loadVault = async () => {
+    try {
+      const vaultData = await fetchVaultLeads();
+      if (vaultData && vaultData.length > 0) {
+        setLeads(prev => {
+          // Merge logic to avoid duplicates
+          const existingIds = new Set(prev.map(l => l.id));
+          const newLeadsFromVault = vaultData.filter(v => !existingIds.has(v.id));
+          return [...newLeadsFromVault, ...prev];
+        });
+      }
+    } catch (e) { console.error("Vault load failed:", e); }
+  };
+
   useEffect(() => {
-    const init = async () => {
-      try {
-        const vaultData = await fetchVaultLeads();
-        if (vaultData && vaultData.length > 0) setLeads(vaultData);
-      } catch (e) { console.error("Vault load failed:", e); }
-    };
-    init();
+    checkSupabaseConnection();
+    loadVault();
   }, []);
 
   useEffect(() => {
@@ -53,8 +62,11 @@ const App: React.FC = () => {
       const lead = leads[nextIdx];
       const updateLead = async (updates: Partial<LeadRecord>) => {
         setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, ...updates } : l));
+        
+        // CRITICAL: We await the save to ensure connection is checked
         if (updates.state === 'completed') {
           const finalRecord = { ...lead, ...updates };
+          console.log(`Intelligence cycle complete for ${lead.id}. Initiating Vault Sync...`);
           await saveEnrichedLead(finalRecord as LeadRecord);
         }
       };
@@ -73,7 +85,7 @@ const App: React.FC = () => {
             firstName: lead.input.firstName, 
             lastName: lead.input.lastName, 
             firmName: lead.input.firmName, 
-            website: lead.input.website 
+            websiteUrl: lead.input.websiteUrl 
           }
         );
 
@@ -86,6 +98,7 @@ const App: React.FC = () => {
         });
 
       } catch (err: any) {
+        console.error("Pipeline Error:", err.message);
         updateLead({ 
           state: 'error', 
           last_stage: 'ERROR', 
@@ -104,42 +117,23 @@ const App: React.FC = () => {
     const dataToExport = leads.filter(l => l.state === 'completed' && (selectedIds.size === 0 || selectedIds.has(l.id)));
     if (dataToExport.length === 0) return;
 
+    // DYNAMIC EXPORT: Instead of hardcoding keys, we take everything in the 'enriched' object.
+    // This ensures that all columns from infy_export_view are included automatically in the XLSX.
     const flattened = dataToExport.map(l => {
       const e = l.enriched!;
-      return {
-        job_id: e.job_id,
-        raw_lead_id: e.raw_lead_id,
-        email: e.email,
-        first_name: e.first_name,
-        last_name: e.last_name,
-        firm_name: e.firm_name,
-        standard_title: e.standard_title,
-        job_level: e.job_level,
-        job_role: e.job_role,
-        f0: e.f0,
-        f1: e.f1,
-        f2: e.f2,
-        vertical: e.vertical,
-        industry: e.industry,
-        city: e.city,
-        state: e.state,
-        zip: e.zip,
-        country: e.country,
-        region: e.region,
-        phone: e.phone,
-        linkedin_url: e.linkedin_url,
-        revenue: e.revenue,
-        intent_score: e.intent_score,
-        intent_signal: e.intent_signal,
-        is_verified: e.is_verified,
-        tenant_id: e.tenant_id,
-        project_id: e.project_id,
-        resolution_status: e.resolution_status,
-        resolution_error: e.resolution_error,
-        last_synced_at: e.last_synced_at,
-        created_at: e.created_at,
-        raw_evidence_json: JSON.stringify(e.raw_evidence_json)
-      };
+      const exportRow: any = {};
+      
+      // Copy all properties from the enriched object
+      Object.keys(e).forEach(key => {
+        const val = (e as any)[key];
+        if (typeof val === 'object' && val !== null) {
+          exportRow[key] = JSON.stringify(val);
+        } else {
+          exportRow[key] = val;
+        }
+      });
+      
+      return exportRow;
     });
 
     const ws = XLSX.utils.json_to_sheet(flattened);
@@ -220,6 +214,7 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center mb-12 border-b border-white/10 pb-10">
                <div><h2 className="text-4xl font-black text-white uppercase tracking-tighter">Institutional Vault</h2><p className="text-indigo-400 text-[10px] font-black uppercase tracking-[0.4em] mt-3">Verified Intelligence Feed</p></div>
                <div className="flex gap-4">
+                 <button onClick={loadVault} className="bg-white/5 hover:bg-white/10 text-white px-8 py-5 rounded-2xl text-[11px] font-black uppercase border border-white/10">Refresh Vault</button>
                  <button onClick={handleExport} className="bg-indigo-600 text-white px-10 py-5 rounded-2xl text-[11px] font-black uppercase shadow-2xl">Bulk Export</button>
                </div>
             </div>

@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { LeadRecord } from '../types';
 
@@ -9,94 +8,107 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * Stage 4: FINALIZATION
- * Persists normalized refinery output to the institutional vault.
- * Strictly adheres to the infy_export_view contract specified in Architect Mode.
+ * Diagnostic: Checks if the tables are reachable.
  */
-export const saveEnrichedLead = async (lead: LeadRecord) => {
-  if (!supabase) return null;
-
-  const e = lead.enriched;
-  if (!e) return null;
-
-  const exportRecord = {
-    job_id: e.job_id,
-    raw_lead_id: lead.id,
-    email: e.email,
-    first_name: e.first_name,
-    last_name: e.last_name,
-    firm_name: e.firm_name,
-    standard_title: e.standard_title,
-    job_level: e.job_level,
-    job_role: e.job_role,
-    f0: e.f0,
-    f1: e.f1,
-    f2: e.f2,
-    vertical: e.vertical,
-    industry: e.industry,
-    city: e.city,
-    state: e.state,
-    zip: e.zip,
-    country: e.country,
-    region: e.region,
-    phone: e.phone,
-    linkedin_url: e.linkedin_url,
-    revenue: e.revenue,
-    intent_score: e.intent_score,
-    intent_signal: e.intent_signal,
-    is_verified: e.is_verified,
-    tenant_id: e.tenant_id,
-    project_id: e.project_id,
-    resolution_status: e.resolution_status,
-    resolution_error: e.resolution_error,
-    last_synced_at: e.last_synced_at,
-    created_at: e.created_at,
-    raw_evidence_json: e.raw_evidence_json
-  };
-
+export const checkSupabaseConnection = async () => {
   try {
-    // Attempt upsert to the view
-    const { data, error } = await supabase
-      .from('infy_export_view') 
-      .upsert(exportRecord, { onConflict: 'raw_lead_id' });
-      
+    const { error } = await supabase.from('infy_enriched_leads').select('count', { count: 'exact', head: true });
     if (error) {
-      console.warn('View upsert failed (expected if view is read-only), falling back to base table:', error.message);
-      // Fallback to the underlying enriched leads table if the view isn't updatable
-      const { error: fallbackError } = await supabase
-        .from('infy_enriched_leads')
-        .upsert(exportRecord, { onConflict: 'raw_lead_id' });
-        
-      if (fallbackError) {
-        console.error('Supabase Refinery Sync Failed:', fallbackError.message);
-      }
+      console.error('Supabase Connectivity Issue:', error.message);
+      return false;
     }
-    return data;
+    console.log('Supabase: Connection Verified.');
+    return true;
   } catch (err) {
-    console.error('Refinery Sync Exception:', err);
-    return null;
+    return false;
   }
 };
 
+/**
+ * Stage 4: FINALIZATION
+ * Persists data by strictly following the parent-child relationship in base tables.
+ */
+export const saveEnrichedLead = async (lead: LeadRecord) => {
+  if (!supabase || !lead.enriched) return null;
+
+  const e = lead.enriched;
+
+  try {
+    // 1. CREATE PARENT (infy_raw_leads)
+    const parentRecord = {
+      id: lead.id,
+      email: lead.input.email,
+      first_name: lead.input.firstName,
+      last_name: lead.input.lastName,
+      firm_name: lead.input.firmName,
+      declared_title: lead.input.declaredTitle,
+      job_id: e.job_id,
+      tenant_id: e.tenant_id || "INSTITUTIONAL-DEFAULT",
+      project_id: e.project_id || "REFINERY-MAIN",
+      enrichment_status: 'completed',
+      created_at: new Date(lead.createdAt).toISOString()
+    };
+
+    const { error: pError } = await supabase
+      .from('infy_raw_leads')
+      .upsert(parentRecord, { onConflict: 'id' });
+
+    if (pError) {
+      console.error('Parent Table Sync Failed:', pError.message);
+      return null; 
+    }
+
+    // 2. CREATE CHILD (infy_enriched_leads)
+    const enrichedRecord = {
+      raw_lead_id: lead.id,
+      job_id: e.job_id,
+      email: e.email,
+      first_name: e.first_name,
+      last_name: e.last_name,
+      firm_name: e.firm_name,
+      standard_title: e.standard_title,
+      job_level_id: e.job_level ? `L${e.job_level}` : (e.job_level_id || null),
+      function_taxonomy_id: e.function_taxonomy_id || (e.f2 ? "FT-DYNAMIC" : null),
+      linkedin_url: e.linkedin_url,
+      intent_signal: e.intent_signal || 'Low',
+      intent_score: e.intent_score || 0,
+      tenant_id: e.tenant_id,
+      project_id: e.project_id,
+      resolution_status: 'classified',
+      last_synced_at: new Date().toISOString(),
+      created_at: e.created_at || new Date().toISOString(),
+      raw_evidence_json: e.raw_evidence_json
+    };
+
+    const { error: eError } = await supabase
+      .from('infy_enriched_leads')
+      .upsert(enrichedRecord, { onConflict: 'raw_lead_id' });
+        
+    if (eError) {
+      console.error('Enriched Table Sync Failed:', eError.message);
+    } else {
+      console.log(`Vault Sync Success for ${lead.id}`);
+    }
+  } catch (err) {
+    console.error('Vault Sync Critical Error:', err);
+  }
+};
+
+/**
+ * FETCHING LOGIC
+ * Targeted at 'infy_export_view' to provide the most complete, joined dataset.
+ */
 export const fetchVaultLeads = async (): Promise<LeadRecord[]> => {
   try {
-    // We try to pull from the export view as it is the canonical source
     const { data, error } = await supabase
       .from('infy_export_view')
       .select('*')
       .order('created_at', { ascending: false });
-      
-    if (error) {
-      // Fallback to the base table if the view query fails
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('infy_enriched_leads')
-        .select('*')
-        .order('created_at', { ascending: false });
         
-      if (fallbackError) return [];
-      return formatSupabaseRows(fallbackData);
+    if (error) {
+      console.error('Vault View Fetch Failed:', error.message);
+      return [];
     }
-    
     return formatSupabaseRows(data);
   } catch (err) {
     return [];
@@ -104,25 +116,36 @@ export const fetchVaultLeads = async (): Promise<LeadRecord[]> => {
 };
 
 /**
- * Maps raw database rows back to the frontend LeadRecord structure.
+ * Formats flat view rows into LeadRecord objects.
+ * Preserves all view columns in the .enriched property.
  */
 function formatSupabaseRows(data: any[] | null): LeadRecord[] {
-  return (data || []).map(row => ({
-    id: row.raw_lead_id,
-    batchId: 'VAULT_SYNC',
-    input: {
-      email: row.email,
-      firstName: row.first_name,
-      lastName: row.last_name,
-      firmName: row.firm_name,
-      declaredTitle: row.standard_title || '',
-      website: row.linkedin_url || ''
-    },
-    state: 'completed',
-    progress: 100,
-    last_stage: 'COMPLETED',
-    enriched: row as any,
-    createdAt: new Date(row.created_at).getTime(),
-    completedAt: new Date(row.last_synced_at || row.created_at).getTime()
-  }));
+  return (data || []).map(row => {
+    const leadId = row.raw_lead_id || row.id;
+    return {
+      id: leadId,
+      batchId: 'VAULT_SYNC',
+      input: {
+        email: row.email || '',
+        firstName: row.first_name || '',
+        lastName: row.last_name || '',
+        firmName: row.firm_name || '',
+        declaredTitle: row.declared_title || row.standard_title || '',
+        websiteUrl: row.linkedin_url || ''
+      },
+      state: 'completed',
+      progress: 100,
+      last_stage: 'COMPLETED',
+      // We pass the entire row into 'enriched' so the Export logic sees all View columns
+      enriched: {
+        ...row,
+        raw_lead_id: leadId,
+        job_level: row.job_level_id 
+          ? (typeof row.job_level_id === 'string' ? parseInt(row.job_level_id.replace('L', '')) : row.job_level_id)
+          : null
+      } as any,
+      createdAt: new Date(row.created_at || Date.now()).getTime(),
+      completedAt: new Date(row.last_synced_at || row.created_at || Date.now()).getTime()
+    };
+  });
 }
