@@ -1,20 +1,18 @@
-
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LeadForm } from './components/LeadForm';
 import { LeadCard } from './components/LeadCard';
 import { BulkEngine } from './components/BulkEngine';
 import { StateMappingTool } from './components/StateMappingTool';
-import { LeadRecord, LeadInput, EnrichmentStage, EnrichedData } from './types';
+import { LeadRecord, LeadInput, EnrichedData } from './types';
 import { performDiscovery, resolveIdentityRefinery } from './services/geminiService';
 import { saveEnrichedLead, fetchVaultLeads } from './services/supabase';
 
 declare const XLSX: any;
 
-// Strict Completeness Score Rule
 export const calculateCompleteness = (enriched: EnrichedData | null): number => {
   if (!enriched) return 0;
   
-  const fieldsToExclude = ['revenue'];
+  const fieldsToExclude = ['revenue', 'raw_evidence_json'];
   const allFields = Object.keys(enriched).filter(k => !fieldsToExclude.includes(k));
   const nonNullCount = allFields.filter(k => {
     const val = (enriched as any)[k];
@@ -57,16 +55,14 @@ const App: React.FC = () => {
         setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, ...updates } : l));
         if (updates.state === 'completed') {
           const finalRecord = { ...lead, ...updates };
-          await saveEnrichedLead(finalRecord);
+          await saveEnrichedLead(finalRecord as LeadRecord);
         }
       };
 
       try {
-        // Stage 2: SERP PROCESSING
         updateLead({ state: 'running', progress: 25, last_stage: 'PROCESSING_SERP' });
         const serpData = await performDiscovery(lead.input.firstName, lead.input.lastName, lead.input.firmName);
 
-        // Stage 3: AI RESOLUTION
         updateLead({ progress: 75, last_stage: 'PROCESSING_AI' });
         const enriched = await resolveIdentityRefinery(
           lead.input.declaredTitle,
@@ -77,11 +73,10 @@ const App: React.FC = () => {
             firstName: lead.input.firstName, 
             lastName: lead.input.lastName, 
             firmName: lead.input.firmName, 
-            website: lead.input.website 
+            websiteUrl: lead.input.websiteUrl 
           }
         );
 
-        // Stage 4: FINALIZATION
         updateLead({ 
           state: 'completed', 
           progress: 100, 
