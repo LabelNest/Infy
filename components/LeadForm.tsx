@@ -14,7 +14,7 @@ export const LeadForm: React.FC<Props> = ({ onAdd, isLoading }) => {
     lastName: '',
     firmName: '',
     declaredTitle: '',
-    websiteUrl: ''
+    website: ''
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -27,7 +27,7 @@ export const LeadForm: React.FC<Props> = ({ onAdd, isLoading }) => {
       lastName: '',
       firmName: '',
       declaredTitle: '',
-      websiteUrl: ''
+      website: ''
     });
   };
 
@@ -76,8 +76,8 @@ export const LeadForm: React.FC<Props> = ({ onAdd, isLoading }) => {
 
         <Input 
           label="Firm Website" 
-          value={formData.websiteUrl} 
-          onChange={(v: string) => setFormData({ ...formData, websiteUrl: v })} 
+          value={formData.website} 
+          onChange={(v: string) => setFormData({ ...formData, website: v })} 
           placeholder="https://www.infosys.com"
         />
         
