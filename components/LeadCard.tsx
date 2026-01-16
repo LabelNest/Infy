@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { LeadRecord } from '../types';
 import { calculateCompleteness } from '../App';
+import { INFY_JOB_LEVELS, INFY_FUNCTION_TAXONOMY } from '../constants';
 
 interface Props {
   lead: LeadRecord;
@@ -18,6 +19,18 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
   const isFailed = lead.state === 'error';
   const completeness = calculateCompleteness(lead.enriched);
   const hasLinkedin = isCompleted && lead.enriched?.linkedin_url;
+
+  // Resolve Human Readable labels for IDs
+  const resolvedLevelLabel = INFY_JOB_LEVELS.find(l => l.job_level_id === lead.enriched?.job_level_id)?.label;
+  const resolvedFuncRow = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === lead.enriched?.function_taxonomy_id);
+  
+  // Real words for Role ID is simply the job_role string
+  const resolvedRoleLabel = lead.enriched?.job_role || resolvedFuncRow?.job_role;
+
+  // Real words for Taxonomy ID is a descriptive path
+  const resolvedTaxonomyLabel = resolvedFuncRow 
+    ? `${resolvedFuncRow.f0}${resolvedFuncRow.f1 ? ` > ${resolvedFuncRow.f1}` : ''}`
+    : null;
 
   return (
     <div className={`relative bg-white border-2 rounded-[24px] overflow-hidden transition-all duration-300 ${
@@ -86,11 +99,11 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
               <DataGroup label="F0: Master Function" value={lead.enriched.f0} />
               <DataGroup label="F1: Sub-Function" value={lead.enriched.f1} />
               <DataGroup label="F2: Specialty" value={lead.enriched.f2} />
-              <DataGroup label="Role ID" value={lead.enriched.job_role_id} />
+              <DataGroup label="Role ID" value={resolvedRoleLabel} />
               <DataGroup label="Standard Title" value={lead.enriched.standard_title} />
-              <DataGroup label="Level ID" value={lead.enriched.job_level_id} />
+              <DataGroup label="Level ID" value={resolvedLevelLabel} />
               <DataGroup label="Job Level" value={String(lead.enriched.job_level)} />
-              <DataGroup label="Taxonomy ID" value={lead.enriched.function_taxonomy_id} />
+              <DataGroup label="Taxonomy ID" value={resolvedTaxonomyLabel} />
             </div>
           </div>
 
