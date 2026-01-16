@@ -73,7 +73,7 @@ const App: React.FC = () => {
             firstName: lead.input.firstName, 
             lastName: lead.input.lastName, 
             firmName: lead.input.firmName, 
-            websiteUrl: lead.input.websiteUrl 
+            website: lead.input.website 
           }
         );
 
