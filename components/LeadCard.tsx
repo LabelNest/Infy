@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { LeadRecord } from '../types';
 import { calculateCompleteness } from '../App';
-import { INFY_JOB_LEVELS, INFY_FUNCTION_TAXONOMY } from '../constants';
+import { INFY_JOB_LEVELS, INFY_FUNCTION_TAXONOMY, INFY_INDUSTRIES } from '../constants';
 
 interface Props {
   lead: LeadRecord;
@@ -20,17 +20,20 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
   const completeness = calculateCompleteness(lead.enriched);
   const hasLinkedin = isCompleted && lead.enriched?.linkedin_url;
 
-  // Resolve Human Readable labels for IDs
+  // Resolve Human Readable labels for IDs (The "Real Words" mapping)
   const resolvedLevelLabel = INFY_JOB_LEVELS.find(l => l.job_level_id === lead.enriched?.job_level_id)?.label;
   const resolvedFuncRow = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === lead.enriched?.function_taxonomy_id);
   
-  // Real words for Role ID is simply the job_role string
-  const resolvedRoleLabel = lead.enriched?.job_role || resolvedFuncRow?.job_role;
+  // Real words for Role: e.g. "Information Technology" or "Business"
+  const resolvedRoleLabel = resolvedFuncRow?.job_role || lead.enriched?.job_role;
 
-  // Real words for Taxonomy ID is a descriptive path
+  // Real words for Taxonomy: e.g. "Information Technology > Application Development"
   const resolvedTaxonomyLabel = resolvedFuncRow 
     ? `${resolvedFuncRow.f0}${resolvedFuncRow.f1 ? ` > ${resolvedFuncRow.f1}` : ''}`
     : null;
+
+  // Real words for Industry
+  const resolvedIndustryLabel = INFY_INDUSTRIES.find(i => i.industry_id === lead.enriched?.industry_id)?.industry_name;
 
   return (
     <div className={`relative bg-white border-2 rounded-[24px] overflow-hidden transition-all duration-300 ${
@@ -120,7 +123,7 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
               <DataGroup label="ZIP Code" value={lead.enriched.zip} />
               <DataGroup label="Vertical" value={lead.enriched.vertical} />
               <DataGroup label="Industry" value={lead.enriched.industry} />
-              <DataGroup label="Industry ID" value={lead.enriched.industry_id} />
+              <DataGroup label="Industry ID" value={resolvedIndustryLabel} />
             </div>
           </div>
 

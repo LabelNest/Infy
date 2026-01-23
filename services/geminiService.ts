@@ -2,17 +2,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { INFY_JOB_LEVELS, INFY_FUNCTION_TAXONOMY, INFY_INDUSTRIES, COUNTRY_REGION_MAPPING } from "../constants";
 import { InfyEnrichedData } from "../types";
 
-/**
- * Institutional Classification Engine
- * Initialized via Google GenAI SDK using process.env.API_KEY
- */
 const getAiClient = () => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 /**
- * Stage 2: ENHANCED DISCOVERY (Internal Helper)
- * Used by the refinery to gather grounding evidence.
+ * Stage 2: ENHANCED DISCOVERY
+ * Gathers grounding evidence from the web.
  */
 const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; firmName: string; website?: string }) => {
   const ai = getAiClient();
@@ -36,8 +32,8 @@ const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; fi
 };
 
 /**
- * Stage 3: REFINERY ENGINE (Governed Identity Resolution)
- * Deterministic classifier that first gathers SERP evidence then applies strict taxonomy rules.
+ * Stage 3: REFINERY ENGINE (Institutional Classification)
+ * Deterministic classifier following strict governance rules.
  */
 export const resolveIdentityRefinery = async (
   declaredTitle: string,
@@ -59,10 +55,10 @@ LEAD PROFILE:
 EVIDENCE FROM SEARCH:
 ${JSON.stringify(evidenceData.results)}
 
-CONTROLLED TABLES (MANDATORY SELECTION):
+CONTROLLED TABLES:
 - Job Levels: ${JSON.stringify(INFY_JOB_LEVELS)}
 - Function Taxonomy: ${JSON.stringify(INFY_FUNCTION_TAXONOMY)}
-- Industry Vertical: ${JSON.stringify(INFY_INDUSTRIES)}
+- Industries: ${JSON.stringify(INFY_INDUSTRIES)}
 - Country-Region Map: ${JSON.stringify(COUNTRY_REGION_MAPPING)}
 `;
 
@@ -70,59 +66,103 @@ CONTROLLED TABLES (MANDATORY SELECTION):
     model: 'gemini-3-pro-preview',
     contents: resolutionPrompt,
     config: {
-      systemInstruction: `You are an Institutional Classification Engine operating under STRICT GOVERNANCE.
-You are a deterministic classifier. NO free text inference.
+      systemInstruction: `You are an Institutional Classification Engine.
+You are NOT a creative AI. You are NOT allowed to invent, infer, guess, or auto-generate values.
+You MUST ONLY select values that exist in the CONTROLLED TABLES provided.
 
-LINKEDIN VALIDATION:
-- Verify profile evidence matches CURRENT employment at ${leadInfo.firmName}.
-- If the URL is for a former employee or different person, set linkedin_url to null.
-
-FUNCTION MAPPING RULES:
-1. You MUST select ONE row from infy_function_taxonomy.
-2. f0, f1, f2 MUST come from the SAME ROW. You MUST NOT mix values across rows.
-3. BUSINESS RULE: If job_role is "Business", f2 MUST be NULL unless f0 is "Marketing".
-4. SALES RULE: Use only f1 values explicitly present in the table.
-
-STANDARD TITLE RULES:
-- Format: [Seniority], [Function]. Example: "Manager, Service Delivery".
-- Expand abbreviations: VP -> Vice President, Sr -> Senior, GTM -> Go To Market.
-- Capitalize every word. Use COMMAS ONLY.
-
-GEOGRAPHY RULES:
-- City, State, Country must match evidence.
-- REGION: Map Country strictly using the Country-Region Map.
-- ZIP: MUST NOT BE NULL. Resolve the most likely ZIP for the City/State/Country combination.
+STRICT GOVERNANCE RULES:
+1. Return ONLY IDs from the controlled tables for Level, Role, Function, and Industry.
+2. FUNCTION MAPPING: You MUST select exactly ONE row from the function taxonomy. f0, f1, and f2 MUST come from the SAME ROW. No mixing.
+3. If no confident match exists for a field, return null.
+4. STANDARD TITLE RULES: This is identity resolution. Expand ALL abbreviations (VP -> Vice President, Sr -> Senior). No dots, no hyphens, no ampersands. Use COMMAS ONLY. Format: [Seniority], [Department], [Location].
+5. GEOGRAPHY: City/State/Country must match evidence. ZIP must be resolved deterministically for that location.
 
 OUTPUT JSON ONLY.`,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          linkedin_url: { type: Type.STRING },
-          salutation: { type: Type.STRING },
-          standard_title: { type: Type.STRING },
-          job_level_id: { type: Type.STRING },
-          function_taxonomy_id: { type: Type.STRING },
-          industry_id: { type: Type.STRING },
-          city: { type: Type.STRING },
-          state: { type: Type.STRING },
-          country: { type: Type.STRING },
-          zip: { type: Type.STRING, description: 'Mandatory deterministic postal code.' },
-          confidence: { type: Type.NUMBER },
-          intent_signal: { type: Type.STRING, enum: ["Low", "Medium", "High"] }
+          standard_title: {
+            type: Type.OBJECT,
+            properties: {
+              value: { type: Type.STRING },
+              confidence: { type: Type.NUMBER }
+            },
+            required: ["value", "confidence"]
+          },
+          job_level: {
+            type: Type.OBJECT,
+            properties: {
+              job_level_id: { type: Type.STRING, nullable: true },
+              confidence: { type: Type.NUMBER }
+            },
+            required: ["job_level_id", "confidence"]
+          },
+          job_role: {
+            type: Type.OBJECT,
+            properties: {
+              job_role_id: { type: Type.STRING, nullable: true },
+              confidence: { type: Type.NUMBER }
+            },
+            required: ["job_role_id", "confidence"]
+          },
+          function: {
+            type: Type.OBJECT,
+            properties: {
+              function_taxonomy_id: { type: Type.STRING, nullable: true },
+              confidence: { type: Type.NUMBER }
+            },
+            required: ["function_taxonomy_id", "confidence"]
+          },
+          industry: {
+            type: Type.OBJECT,
+            properties: {
+              industry_id: { type: Type.STRING, nullable: true },
+              confidence: { type: Type.NUMBER }
+            },
+            required: ["industry_id", "confidence"]
+          },
+          location: {
+            type: Type.OBJECT,
+            properties: {
+              city: { type: Type.STRING, nullable: true },
+              state: { type: Type.STRING, nullable: true },
+              country: { type: Type.STRING, nullable: true },
+              zip: { type: Type.STRING, nullable: true }
+            },
+            required: ["city", "state", "country", "zip"]
+          },
+          profile: {
+            type: Type.OBJECT,
+            properties: {
+              linkedin_url: { type: Type.STRING, nullable: true },
+              source: { type: Type.STRING, enum: ["serp", "none"] }
+            },
+            required: ["linkedin_url", "source"]
+          },
+          intent_signal: {
+            type: Type.OBJECT,
+            properties: {
+              value: { type: Type.STRING, enum: ["Low", "Medium", "High"] },
+              confidence: { type: Type.NUMBER }
+            },
+            required: ["value", "confidence"]
+          }
         },
-        required: ["standard_title", "job_level_id", "function_taxonomy_id", "industry_id", "city", "state", "country", "zip"]
+        required: ["standard_title", "job_level", "function", "industry", "location", "profile", "intent_signal"]
       }
     }
   });
 
-  const res = JSON.parse(response.text || "{}");
+  const intel = JSON.parse(response.text || "{}");
   
-  // Resolve mapping objects
-  const levelMatch = INFY_JOB_LEVELS.find(l => l.job_level_id === res.job_level_id);
-  const funcMatch = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === res.function_taxonomy_id);
-  const indMatch = INFY_INDUSTRIES.find(i => i.industry_id === res.industry_id);
-  const region = COUNTRY_REGION_MAPPING[res.country] || "Global";
+  // Strict resolution from tables based on IDs
+  const levelMatch = INFY_JOB_LEVELS.find(l => l.job_level_id === intel.job_level.job_level_id);
+  const funcMatch = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === intel.function.function_taxonomy_id);
+  const indMatch = INFY_INDUSTRIES.find(i => i.industry_id === intel.industry.industry_id);
+  
+  const resolvedCountry = intel.location.country || "United States";
+  const region = COUNTRY_REGION_MAPPING[resolvedCountry] || "Global";
 
   const now = new Date().toISOString();
 
@@ -134,30 +174,30 @@ OUTPUT JSON ONLY.`,
     last_name: leadInfo.lastName,
     firm_name: leadInfo.firmName,
     website: leadInfo.website || null,
-    standard_title: res.standard_title,
-    salutation: res.salutation || null,
+    standard_title: intel.standard_title.value,
+    salutation: null, // Resolvable if needed but focusing on taxonomy
     job_level: levelMatch?.job_level_numeric || 5,
-    job_level_id: res.job_level_id,
+    job_level_id: intel.job_level.job_level_id,
     job_role: funcMatch?.job_role || null,
     job_role_id: funcMatch?.job_role_id || null,
-    function_taxonomy_id: res.function_taxonomy_id,
+    function_taxonomy_id: intel.function.function_taxonomy_id,
     f0: funcMatch?.f0 || null,
     f1: funcMatch?.f1 || null,
     f2: funcMatch?.f2 || null,
     industry: indMatch?.industry_name || null,
-    industry_id: res.industry_id,
+    industry_id: intel.industry.industry_id,
     vertical: indMatch?.vertical_code || null,
     vertical_id: indMatch?.vertical_id || null,
-    city: res.city,
-    state: res.state,
-    zip: res.zip, 
-    country: res.country,
+    city: intel.location.city,
+    state: intel.location.state,
+    zip: intel.location.zip || "00000", 
+    country: resolvedCountry,
     region: region,
     phone: null,
-    linkedin_url: res.linkedin_url || null,
-    intent_score: res.confidence || 0,
-    intent_signal: res.intent_signal || "Low",
-    is_verified: (res.confidence || 0) > 85,
+    linkedin_url: intel.profile.linkedin_url,
+    intent_score: intel.intent_signal.confidence,
+    intent_signal: intel.intent_signal.value,
+    is_verified: intel.intent_signal.confidence > 85,
     tenant_id: "INSTITUTIONAL-DEFAULT",
     project_id: "REFINERY-MAIN",
     resolution_status: "classified",
@@ -166,15 +206,12 @@ OUTPUT JSON ONLY.`,
     raw_evidence_json: {
       serp_query: evidenceData.query,
       serp_results: evidenceData.results,
-      ai_output: res,
-      discovery_logic: "internal_serp_pass_v5"
+      ai_output: intel,
+      discovery_logic: "governed_institutional_v6"
     }
   };
 };
 
-/**
- * Tactical Mapping Engine (Helper)
- */
 export const resolveCountryFromState = async (stateInput: string) => {
   const ai = getAiClient();
   const response = await ai.models.generateContent({
