@@ -2,7 +2,7 @@ export const INFY_JOB_LEVELS = [
   { job_level_id: "L1-FOUNDER", job_level_numeric: 1, label: "Founder / Board / C-Level" },
   { job_level_id: "L2-PRESIDENT", job_level_numeric: 2, label: "President / EVP / SVP" },
   { job_level_id: "L3-VP", job_level_numeric: 3, label: "Vice President / Director" },
-  { job_level_id: "L4-MANAGER", job_level_numeric: 4, label: "Manager / Head" },
+  { job_level_id: "L4-MANAGER", job_level_numeric: 4, label: "Manager / Head" }
 ];
 
 export const INFY_FUNCTION_TAXONOMY = [
@@ -14,7 +14,7 @@ export const INFY_FUNCTION_TAXONOMY = [
   { function_taxonomy_id: "FT-BIZ-FIN-006", job_role: 'Business', job_role_id: "JR-BIZ", f0: 'Finance', f1: 'Financial Planning', f2: null },
   { function_taxonomy_id: "FT-BIZ-SAL-007", job_role: 'Business', job_role_id: "JR-BIZ", f0: 'Sales', f1: 'Channel Sales', f2: null },
   { function_taxonomy_id: "FT-BIZ-HR-008", job_role: 'Business', job_role_id: "JR-BIZ", f0: 'Human Resources', f1: 'Talent Acquisition', f2: null },
-  { function_taxonomy_id: "FT-OPS-DEL-009", job_role: 'Manager', job_role_id: "JR-OPS", f0: 'Operations', f1: 'Service Delivery', f2: null }
+  { function_taxonomy_id: "FT-OPS-DEL-009", job_role: 'Operations', job_role_id: "JR-OPS", f0: 'Operations', f1: 'Service Delivery', f2: null }
 ];
 
 export const INFY_INDUSTRIES = [

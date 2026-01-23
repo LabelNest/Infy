@@ -8,18 +8,19 @@ const getAiClient = () => {
 
 /**
  * Stage 2: ENHANCED DISCOVERY
- * Gathers grounding evidence from the web.
+ * Gathers grounding evidence from the web, explicitly looking for HQ if person location is missing.
  */
 const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; firmName: string; website?: string }) => {
   const ai = getAiClient();
-  const query = `site:linkedin.com/in intitle:"${leadInfo.firstName} ${leadInfo.lastName}" "${leadInfo.firmName}"`;
+  // Search for both person and company HQ for location fallback
+  const query = `"${leadInfo.firstName} ${leadInfo.lastName}" at "${leadInfo.firmName}" location OR "${leadInfo.firmName}" headquarters address`;
   
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Find the professional LinkedIn profile, bio snippets, and current job description for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}. 
-               Context Website: ${leadInfo.website || 'Not provided'}.`,
+    contents: `Find the professional profile and location for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}. 
+               If the specific person's location is unavailable, find the official Headquarters address for ${leadInfo.firmName}.`,
     config: {
-      systemInstruction: "You are a specialized OSINT agent. Locate CURRENT employment evidence. Do not guess. Extract grounding chunks with high precision.",
+      systemInstruction: "You are a specialized OSINT agent. Locate CURRENT employment and location evidence. Do not return placeholders like '00000'. Search for HQ if person location is missing.",
       tools: [{ googleSearch: {} }],
     }
   });
@@ -56,7 +57,7 @@ EVIDENCE FROM SEARCH:
 ${JSON.stringify(evidenceData.results)}
 
 CONTROLLED TABLES:
-- Job Levels: ${JSON.stringify(INFY_JOB_LEVELS)}
+- Job Levels (VALID IDS ONLY: L1-L4): ${JSON.stringify(INFY_JOB_LEVELS)}
 - Function Taxonomy: ${JSON.stringify(INFY_FUNCTION_TAXONOMY)}
 - Industries: ${JSON.stringify(INFY_INDUSTRIES)}
 - Country-Region Map: ${JSON.stringify(COUNTRY_REGION_MAPPING)}
@@ -67,15 +68,14 @@ CONTROLLED TABLES:
     contents: resolutionPrompt,
     config: {
       systemInstruction: `You are an Institutional Classification Engine.
-You are NOT a creative AI. You are NOT allowed to invent, infer, guess, or auto-generate values.
-You MUST ONLY select values that exist in the CONTROLLED TABLES provided.
-
-STRICT GOVERNANCE RULES:
-1. Return ONLY IDs from the controlled tables for Level, Role, Function, and Industry.
-2. FUNCTION MAPPING: You MUST select exactly ONE row from the function taxonomy. f0, f1, and f2 MUST come from the SAME ROW. No mixing.
-3. If no confident match exists for a field, return null.
-4. STANDARD TITLE RULES: This is identity resolution. Expand ALL abbreviations (VP -> Vice President, Sr -> Senior). No dots, no hyphens, no ampersands. Use COMMAS ONLY. Format: [Seniority], [Department], [Location].
-5. GEOGRAPHY: City/State/Country must match evidence. ZIP must be resolved deterministically for that location.
+STRICT GOVERNANCE:
+1. Return ONLY IDs from the controlled tables. 
+2. JOB LEVEL: Only L1, L2, L3, or L4 are permitted. Do not return L5.
+3. LOCATION (MANDATORY): City and State MUST NOT BE NULL.
+   - If the person's specific location is not found in evidence, you MUST use the Company Headquarters location found in the evidence.
+4. ZIP CODE: MUST BE A VALID 5-9 DIGIT POSTAL CODE for the resolved city. Do not return '00000'.
+5. FUNCTION MAPPING: Select exactly ONE row from taxonomy. f0, f1, f2 must be from the SAME ROW.
+6. STANDARD TITLE: Expand all abbreviations (VP -> Vice President). Use COMMAS ONLY.
 
 OUTPUT JSON ONLY.`,
       responseMimeType: "application/json",
@@ -93,7 +93,7 @@ OUTPUT JSON ONLY.`,
           job_level: {
             type: Type.OBJECT,
             properties: {
-              job_level_id: { type: Type.STRING, nullable: true },
+              job_level_id: { type: Type.STRING, enum: ["L1-FOUNDER", "L2-PRESIDENT", "L3-VP", "L4-MANAGER"] },
               confidence: { type: Type.NUMBER }
             },
             required: ["job_level_id", "confidence"]
@@ -125,10 +125,10 @@ OUTPUT JSON ONLY.`,
           location: {
             type: Type.OBJECT,
             properties: {
-              city: { type: Type.STRING, nullable: true },
-              state: { type: Type.STRING, nullable: true },
-              country: { type: Type.STRING, nullable: true },
-              zip: { type: Type.STRING, nullable: true }
+              city: { type: Type.STRING },
+              state: { type: Type.STRING },
+              country: { type: Type.STRING },
+              zip: { type: Type.STRING }
             },
             required: ["city", "state", "country", "zip"]
           },
@@ -175,8 +175,8 @@ OUTPUT JSON ONLY.`,
     firm_name: leadInfo.firmName,
     website: leadInfo.website || null,
     standard_title: intel.standard_title.value,
-    salutation: null, // Resolvable if needed but focusing on taxonomy
-    job_level: levelMatch?.job_level_numeric || 5,
+    salutation: null,
+    job_level: levelMatch?.job_level_numeric || 4,
     job_level_id: intel.job_level.job_level_id,
     job_role: funcMatch?.job_role || null,
     job_role_id: funcMatch?.job_role_id || null,
@@ -190,7 +190,7 @@ OUTPUT JSON ONLY.`,
     vertical_id: indMatch?.vertical_id || null,
     city: intel.location.city,
     state: intel.location.state,
-    zip: intel.location.zip || "00000", 
+    zip: intel.location.zip || "Unknown", 
     country: resolvedCountry,
     region: region,
     phone: null,
@@ -207,7 +207,7 @@ OUTPUT JSON ONLY.`,
       serp_query: evidenceData.query,
       serp_results: evidenceData.results,
       ai_output: intel,
-      discovery_logic: "governed_institutional_v6"
+      discovery_logic: "location_mandatory_v7"
     }
   };
 };

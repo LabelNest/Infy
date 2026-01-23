@@ -148,9 +148,9 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
 const DataGroup = ({ label, value, sub }: { label: string, value: string | null | undefined, sub?: string }) => (
   <div className="min-w-0">
     <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">{label}</label>
-    <div className={`text-[11px] font-black uppercase truncate ${!value ? 'text-slate-300' : 'text-slate-800'}`}>
-      {value || 'NULL'}
+    <div className={`text-[11px] font-black uppercase truncate ${!value || value === 'null' || value === 'NULL' ? 'text-slate-300' : 'text-slate-800'}`}>
+      {(!value || value === 'null' || value === 'NULL') ? 'PENDING RESOLUTION' : value}
     </div>
-    {sub && value && <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">{sub}</div>}
+    {sub && value && value !== 'null' && <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">{sub}</div>}
   </div>
 );
