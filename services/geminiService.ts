@@ -8,19 +8,20 @@ const getAiClient = () => {
 
 /**
  * Stage 2: ENHANCED DISCOVERY
- * Gathers grounding evidence from the web, explicitly looking for HQ if person location is missing.
+ * Gathers grounding evidence from the web.
+ * CRITICAL: Specifically asks for Headquarters Address as a mandatory fallback.
  */
 const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; firmName: string; website?: string }) => {
   const ai = getAiClient();
-  // Search for both person and company HQ for location fallback
-  const query = `"${leadInfo.firstName} ${leadInfo.lastName}" at "${leadInfo.firmName}" location OR "${leadInfo.firmName}" headquarters address`;
+  const query = `professional profile for "${leadInfo.firstName} ${leadInfo.lastName}" at "${leadInfo.firmName}" AND "${leadInfo.firmName}" corporate headquarters address and zip code`;
   
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Find the professional profile and location for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}. 
-               If the specific person's location is unavailable, find the official Headquarters address for ${leadInfo.firmName}.`,
+    contents: `1. Find the professional LinkedIn profile and bio for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}.
+               2. Find the exact address (City, State, Zip) for the Headquarters of ${leadInfo.firmName}.
+               3. If the person's location is different from HQ, note it. If unknown, the HQ address is the mandatory fallback.`,
     config: {
-      systemInstruction: "You are a specialized OSINT agent. Locate CURRENT employment and location evidence. Do not return placeholders like '00000'. Search for HQ if person location is missing.",
+      systemInstruction: "You are a professional OSINT agent. Your primary goal is to resolve EXACT geographic data. Do not invent zip codes. Use Company HQ data if personal office location is not explicitly stated in snippets.",
       tools: [{ googleSearch: {} }],
     }
   });
@@ -56,9 +57,9 @@ LEAD PROFILE:
 EVIDENCE FROM SEARCH:
 ${JSON.stringify(evidenceData.results)}
 
-CONTROLLED TABLES:
-- Job Levels (VALID IDS ONLY: L1-L4): ${JSON.stringify(INFY_JOB_LEVELS)}
-- Function Taxonomy: ${JSON.stringify(INFY_FUNCTION_TAXONOMY)}
+CONTROLLED TAXONOMY TABLES (MANDATORY MATCHING):
+- Job Levels (STRICT 1-4 ONLY): ${JSON.stringify(INFY_JOB_LEVELS)}
+- Function Taxonomy (MATCH EXACT ROW): ${JSON.stringify(INFY_FUNCTION_TAXONOMY)}
 - Industries: ${JSON.stringify(INFY_INDUSTRIES)}
 - Country-Region Map: ${JSON.stringify(COUNTRY_REGION_MAPPING)}
 `;
@@ -69,13 +70,14 @@ CONTROLLED TABLES:
     config: {
       systemInstruction: `You are an Institutional Classification Engine.
 STRICT GOVERNANCE:
-1. Return ONLY IDs from the controlled tables. 
-2. JOB LEVEL: Only L1, L2, L3, or L4 are permitted. Do not return L5.
+1. TAXONOMY: You MUST select exactly ONE row from the provided Function Taxonomy table. 
+   - DO NOT combine an F0 from one row with an F1 from another.
+   - Example: If F1 'Channel Sales' is not in the table for 'Sales', you MUST NOT return it. Select the closest existing F1 from the 'Sales' rows or return null.
+2. JOB LEVEL: Only L1, L2, L3, or L4 are permitted. Level 5 is FORBIDDEN.
 3. LOCATION (MANDATORY): City and State MUST NOT BE NULL.
-   - If the person's specific location is not found in evidence, you MUST use the Company Headquarters location found in the evidence.
-4. ZIP CODE: MUST BE A VALID 5-9 DIGIT POSTAL CODE for the resolved city. Do not return '00000'.
-5. FUNCTION MAPPING: Select exactly ONE row from taxonomy. f0, f1, f2 must be from the SAME ROW.
-6. STANDARD TITLE: Expand all abbreviations (VP -> Vice President). Use COMMAS ONLY.
+   - If the person's specific office is unknown, YOU MUST USE THE COMPANY HEADQUARTERS location from the evidence.
+4. ZIP CODE: MUST BE A REAL POSTAL CODE for the resolved city. DO NOT RETURN '00000'. Search for the HQ zip code if necessary.
+5. STANDARD TITLE: Expand all abbreviations (VP -> Vice President). Format: [Seniority], [Department], [Location].
 
 OUTPUT JSON ONLY.`,
       responseMimeType: "application/json",
@@ -97,14 +99,6 @@ OUTPUT JSON ONLY.`,
               confidence: { type: Type.NUMBER }
             },
             required: ["job_level_id", "confidence"]
-          },
-          job_role: {
-            type: Type.OBJECT,
-            properties: {
-              job_role_id: { type: Type.STRING, nullable: true },
-              confidence: { type: Type.NUMBER }
-            },
-            required: ["job_role_id", "confidence"]
           },
           function: {
             type: Type.OBJECT,
@@ -190,7 +184,7 @@ OUTPUT JSON ONLY.`,
     vertical_id: indMatch?.vertical_id || null,
     city: intel.location.city,
     state: intel.location.state,
-    zip: intel.location.zip || "Unknown", 
+    zip: intel.location.zip, 
     country: resolvedCountry,
     region: region,
     phone: null,
@@ -207,7 +201,7 @@ OUTPUT JSON ONLY.`,
       serp_query: evidenceData.query,
       serp_results: evidenceData.results,
       ai_output: intel,
-      discovery_logic: "location_mandatory_v7"
+      discovery_logic: "hq_mandatory_fallback_v8"
     }
   };
 };
