@@ -120,7 +120,7 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
     country: country,
     region: region,
     phone: null,
-    linkedin_url: intel.linkedin_url,
+    linkedin_url: intel.profile.linkedin_url ?? null,
     intent_score: intel.confidence,
     intent_signal: intel.confidence > 70 ? "High" : intel.confidence > 40 ? "Medium" : "Low",
     is_verified: intel.confidence > 85,
