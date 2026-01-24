@@ -145,12 +145,15 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
   );
 };
 
-const DataGroup = ({ label, value, sub }: { label: string, value: string | null | undefined, sub?: string }) => (
-  <div className="min-w-0">
-    <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">{label}</label>
-    <div className={`text-[11px] font-black uppercase truncate ${!value || value === 'null' || value === 'NULL' ? 'text-slate-300' : 'text-slate-800'}`}>
-      {(!value || value === 'null' || value === 'NULL') ? 'PENDING RESOLUTION' : value}
+const DataGroup = ({ label, value, sub }: { label: string, value: string | null | undefined, sub?: string }) => {
+  const isPending = !value || value === 'null' || value === 'NULL' || value === '00000';
+  return (
+    <div className="min-w-0">
+      <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">{label}</label>
+      <div className={`text-[11px] font-black uppercase truncate ${isPending ? 'text-slate-300' : 'text-slate-800'}`}>
+        {isPending ? 'PENDING RESOLUTION' : value}
+      </div>
+      {sub && !isPending && <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">{sub}</div>}
     </div>
-    {sub && value && value !== 'null' && <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">{sub}</div>}
-  </div>
-);
+  );
+};

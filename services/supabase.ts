@@ -7,17 +7,10 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-/**
- * Diagnostic: Checks if the Infy tables are reachable.
- */
 export const checkSupabaseConnection = async () => {
   try {
     const { error } = await supabase.from('infy_enriched_leads').select('count', { count: 'exact', head: true });
-    if (error) {
-      console.error('Supabase Infy Connectivity Issue:', error.message);
-      return false;
-    }
-    console.log('Supabase: Infy Connection Verified.');
+    if (error) return false;
     return true;
   } catch (err) {
     return false;
@@ -25,8 +18,8 @@ export const checkSupabaseConnection = async () => {
 };
 
 /**
- * Stage 4: FINALIZATION
- * Persists data strictly using "infy_" prefixed base tables.
+ * Stage 4: FINALIZATION (Sync to Supabase)
+ * This logic strictly follows your infy_enriched_leads column definitions.
  */
 export const saveEnrichedLead = async (lead: LeadRecord) => {
   if (!supabase || !lead.enriched) return null;
@@ -36,7 +29,7 @@ export const saveEnrichedLead = async (lead: LeadRecord) => {
   try {
     // 1. CREATE PARENT (infy_raw_leads)
     const parentRecord = {
-      id: lead.id,
+      id: lead.id, // Must be a UUID string
       email: lead.input.email,
       first_name: lead.input.firstName,
       last_name: lead.input.lastName,
@@ -55,33 +48,50 @@ export const saveEnrichedLead = async (lead: LeadRecord) => {
       .upsert(parentRecord, { onConflict: 'id' });
 
     if (pError) {
-      console.error('infy_raw_leads Sync Failed:', pError.message);
+      console.error('Sync Aborted: infy_raw_leads Error:', pError.message);
       return null; 
     }
 
     // 2. CREATE CHILD (infy_enriched_leads)
+    // We map the internal object to your EXACT table columns.
     const enrichedRecord = {
-      raw_lead_id: lead.id,
+      raw_lead_id: lead.id, // UUID
       job_id: e.job_id,
       email: e.email,
       first_name: e.first_name,
       last_name: e.last_name,
       firm_name: e.firm_name,
-      website: e.website || lead.input.website || null,
       standard_title: e.standard_title,
-      job_level_id: e.job_level_id || (e.job_level ? `L${e.job_level}` : null),
-      function_taxonomy_id: e.function_taxonomy_id,
-      industry_id: e.industry_id,
-      salutation: e.salutation || null,
+      job_level: String(e.job_level), // Your table says 'text' for job_level
+      job_role: e.job_role,
+      f0: e.f0,
+      f1: e.f1,
+      f2: e.f2,
+      city: e.city,
+      state: e.state,
+      zip: e.zip,
+      country: e.country,
+      region: e.region,
+      vertical: e.vertical,
+      industry: e.industry,
+      intent_score: e.intent_score, // double precision
+      intent_signal: e.intent_signal,
       linkedin_url: e.linkedin_url,
-      intent_signal: e.intent_signal || 'Low',
-      intent_score: e.intent_score || 0,
+      is_verified: e.is_verified, // boolean
+      raw_evidence_json: e.raw_evidence_json, // jsonb
+      last_synced_at: new Date().toISOString(),
       tenant_id: e.tenant_id,
       project_id: e.project_id,
       resolution_status: 'classified',
-      last_synced_at: new Date().toISOString(),
+      function_taxonomy_id: e.function_taxonomy_id, // MUST be valid UUID
+      job_level_id: e.job_level_id, // MUST be valid UUID
+      industry_id: e.industry_id, // MUST be valid UUID
+      salutation: e.salutation,
+      phone: e.phone,
       created_at: e.created_at || new Date().toISOString(),
-      raw_evidence_json: e.raw_evidence_json
+      // Adding confidence metrics from schema
+      standard_title_confidence: e.intent_score, 
+      function_confidence: e.intent_score
     };
 
     const { error: eError } = await supabase
@@ -89,19 +99,19 @@ export const saveEnrichedLead = async (lead: LeadRecord) => {
       .upsert(enrichedRecord, { onConflict: 'raw_lead_id' });
         
     if (eError) {
-      console.error('infy_enriched_leads Sync Failed:', eError.message);
+      console.error('Critical Sync Error (infy_enriched_leads):', eError.message);
+      console.error('Payload Check:', {
+        function_taxonomy_id: e.function_taxonomy_id,
+        raw_lead_id: lead.id
+      });
     } else {
-      console.log(`Infy Vault Sync Success for ${lead.id}`);
+      console.log(`Vault Sync Successful for Lead ID: ${lead.id}`);
     }
   } catch (err) {
-    console.error('Infy Vault Sync Critical Error:', err);
+    console.error('Vault Sync Exception:', err);
   }
 };
 
-/**
- * FETCHING LOGIC
- * Pulls data exclusively from 'infy_export_view'.
- */
 export const fetchVaultLeads = async (): Promise<LeadRecord[]> => {
   try {
     const { data, error } = await supabase
@@ -109,19 +119,13 @@ export const fetchVaultLeads = async (): Promise<LeadRecord[]> => {
       .select('*')
       .order('created_at', { ascending: false });
         
-    if (error) {
-      console.error('infy_export_view Fetch Failed:', error.message);
-      return [];
-    }
+    if (error) return [];
     return formatSupabaseRows(data);
   } catch (err) {
     return [];
   }
 };
 
-/**
- * Formats flat infy_export_view rows into LeadRecord objects.
- */
 function formatSupabaseRows(data: any[] | null): LeadRecord[] {
   return (data || []).map(row => {
     const leadId = row.raw_lead_id || row.id;
@@ -133,7 +137,7 @@ function formatSupabaseRows(data: any[] | null): LeadRecord[] {
         firstName: row.first_name || '',
         lastName: row.last_name || '',
         firmName: row.firm_name || '',
-        declaredTitle: row.declared_title || row.standard_title || '',
+        declaredTitle: row.standard_title || '',
         website: row.website || ''
       },
       state: 'completed',
@@ -142,9 +146,7 @@ function formatSupabaseRows(data: any[] | null): LeadRecord[] {
       enriched: {
         ...row,
         raw_lead_id: leadId,
-        job_level: row.job_level_id 
-          ? (typeof row.job_level_id === 'string' ? parseInt(row.job_level_id.replace('L', '')) : row.job_level_id)
-          : null
+        job_level: row.job_level ? parseInt(String(row.job_level).replace(/\D/g, '')) : null
       } as InfyEnrichedData,
       createdAt: new Date(row.created_at || Date.now()).getTime(),
       completedAt: new Date(row.last_synced_at || row.created_at || Date.now()).getTime()

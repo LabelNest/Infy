@@ -1,137 +1,72 @@
 
-import { createClient } from '@supabase/supabase-js'
-import { GoogleGenAI } from "@google/genai"
+export type EnrichmentStage = 'QUEUED' | 'PROCESSING_SERP' | 'PROCESSING_AI' | 'COMPLETED' | 'ERROR';
+export type EnrichmentState = 'queued' | 'running' | 'completed' | 'error';
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
-
-  const { raw_lead_id } = req.body
-  if (!raw_lead_id) {
-    return res.status(400).json({ error: 'Missing raw_lead_id' })
-  }
-
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
-  )
-
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  try {
-    const { data: lead, error: rawError } = await supabase
-      .from('infy_raw_leads')
-      .select('*')
-      .eq('id', raw_lead_id)
-      .single()
-
-    if (rawError || !lead) throw new Error('Infy raw lead not found')
-
-    const serpQuery = `${lead.first_name} ${lead.last_name} ${lead.firm_name}`
-    const serpRes = await fetch(
-      `https://serpapi.com/search.json?q=${encodeURIComponent(serpQuery)}&api_key=${process.env.SERP_API_KEY}`
-    )
-
-    const serpData = await serpRes.json()
-    const organic = serpData.organic_results || []
-
-    const linkedinUrl = organic.find(r => r.link?.includes("linkedin.com"))?.link || null
-    const serpSnippets = organic.slice(0, 6).map(r => r.snippet).join("\n")
-    const linkedInTitle = organic.find(r => r.link?.includes("linkedin.com"))?.title || ""
-
-    const [jobLevels, functions, industries] = await Promise.all([
-      supabase.from('infy_job_levels').select('*'),
-      supabase.from('infy_function_taxonomy').select('*'),
-      supabase.from('infy_industries').select('*')
-    ])
-
-    const systemInstruction = `
-You are the Institutional Identity Resolution Engine for the Infy Intelligence Vault.
-Your task is to generate the "standard_title".
-
-EVIDENCE HIERARCHY:
-1) LinkedIn Title (Highest Trust)
-2) Company Website or Bio Snippets
-3) Declared Title (User Input - Lowest Trust)
-
-RULES:
-- Expand ALL abbreviations (VP -> Vice President, Sr -> Senior, GTM -> Go To Market, etc.)
-- Use COMMAS ONLY for punctuation. No hyphens, ampersands, or slashes.
-- Order: Seniority, Department, Location.
-- Capitalize Every Word.
-
-TABLES FOR CLASSIFICATION:
-Job Levels: ${JSON.stringify(jobLevels.data)}
-Functions: ${JSON.stringify(functions.data)}
-Industries: ${JSON.stringify(industries.data)}
-
-OUTPUT JSON ONLY:
-{
-  "standard_title": { "value": "...", "confidence": 0-100 },
-  "salutation": { "value": "Mr|Mrs|null", "confidence": 0-100 },
-  "job_level": { "job_level_id": "...", "confidence": 0-100 },
-  "function": { "function_taxonomy_id": "...", "confidence": 0-100 },
-  "industry": { "industry_id": "...", "confidence": 0-100 },
-  "intent_signal": { "value": "Low|Medium|High", "confidence": 0-100 }
+export interface LeadInput {
+  email: string;
+  firstName: string;
+  lastName: string;
+  firmName: string;
+  declaredTitle: string;
+  website?: string;
 }
-`
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: `
-Declared Title: ${lead.declared_title}
-LinkedIn Title (SERP): ${linkedInTitle}
-LinkedIn URL: ${linkedinUrl || "None"}
-Evidence Snippets:
-${serpSnippets}
-`,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json"
-      }
-    })
+export interface InfyEnrichedData {
+  job_id: string;
+  raw_lead_id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  firm_name: string;
+  website: string | null;
+  standard_title: string | null;
+  job_level: number | null;
+  job_level_id: string | null;
+  job_role: string | null;
+  job_role_id: string | null;
+  function_taxonomy_id: string | null;
+  f0: string | null;
+  f1: string | null;
+  f2: string | null;
+  vertical: string | null;
+  vertical_id: string | null;
+  industry: string | null;
+  industry_id: string | null;
+  // Professional salutation resolved during AI refinery
+  salutation: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null; // Changed to nullable to support clean data rules
+  country: string | null;
+  region: string | null; // Cannot be null if country is resolved
+  phone: string | null;
+  linkedin_url: string | null;
+  alternate_profile_url?: string | null;
+  intent_score: number;
+  intent_signal: "Low" | "Medium" | "High";
+  is_verified: boolean;
+  tenant_id: string;
+  project_id: string;
+  resolution_status: string;
+  last_synced_at: string;
+  created_at: string;
+  raw_evidence_json: {
+    serp_query: string;
+    serp_results: any;
+    ai_output: any;
+    discovery_logic?: string;
+  };
+}
 
-    const intel = JSON.parse(response.text || '{}')
-
-    const enrichedRecord = {
-      raw_lead_id: lead.id,
-      job_id: lead.job_id,
-      email: lead.email,
-      first_name: lead.first_name,
-      last_name: lead.last_name,
-      firm_name: lead.firm_name,
-      standard_title: intel.standard_title?.value || null,
-      salutation: intel.salutation?.value || null,
-      job_level_id: intel.job_level?.job_level_id,
-      function_taxonomy_id: intel.function?.function_taxonomy_id,
-      industry_id: intel.industry?.industry_id,
-      linkedin_url: linkedinUrl,
-      intent_signal: intel.intent_signal?.value || 'Low',
-      intent_score: intel.intent_signal?.confidence || 0,
-      tenant_id: lead.tenant_id,
-      project_id: lead.project_id,
-      resolution_status: 'classified',
-      raw_evidence_json: {
-        serp: organic,
-        ai: intel,
-        resolution_path: "LinkedIn > Snippet > Declared"
-      }
-    }
-
-    await supabase
-      .from('infy_enriched_leads')
-      .upsert(enrichedRecord, { onConflict: 'raw_lead_id' })
-
-    await supabase
-      .from('infy_raw_leads')
-      .update({ enrichment_status: 'completed' })
-      .eq('id', lead.id)
-
-    return res.json({ status: 'ok', raw_lead_id: lead.id })
-
-  } catch (err) {
-    console.error("INFY PIPELINE ERROR:", err)
-    return res.status(500).json({ status: 'error', message: err.message })
-  }
+export interface LeadRecord {
+  id: string;
+  batchId: string;
+  input: LeadInput;
+  state: EnrichmentState;
+  progress: number;
+  last_stage: EnrichmentStage;
+  enriched: InfyEnrichedData | null;
+  error?: string;
+  createdAt: number;
+  completedAt?: number;
 }

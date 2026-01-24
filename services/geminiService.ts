@@ -6,22 +6,15 @@ const getAiClient = () => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
-/**
- * Stage 2: ENHANCED DISCOVERY
- * Gathers grounding evidence from the web.
- * CRITICAL: Specifically asks for Headquarters Address as a mandatory fallback.
- */
 const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; firmName: string; website?: string }) => {
   const ai = getAiClient();
-  const query = `professional profile for "${leadInfo.firstName} ${leadInfo.lastName}" at "${leadInfo.firmName}" AND "${leadInfo.firmName}" corporate headquarters address and zip code`;
+  const query = `professional profile for "${leadInfo.firstName} ${leadInfo.lastName}" at "${leadInfo.firmName}" AND "${leadInfo.firmName}" corporate headquarters address city state zip`;
   
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `1. Find the professional LinkedIn profile and bio for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}.
-               2. Find the exact address (City, State, Zip) for the Headquarters of ${leadInfo.firmName}.
-               3. If the person's location is different from HQ, note it. If unknown, the HQ address is the mandatory fallback.`,
+    contents: `Find professional details for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName} and their corporate HQ address.`,
     config: {
-      systemInstruction: "You are a professional OSINT agent. Your primary goal is to resolve EXACT geographic data. Do not invent zip codes. Use Company HQ data if personal office location is not explicitly stated in snippets.",
+      systemInstruction: "Extract professional location data. Use Company HQ if individual office is missing. City, State, and Zip are mandatory. ZIP MUST be the real geographic code matching the City/State. Placeholders like 00000 or 99999 are strictly forbidden.",
       tools: [{ googleSearch: {} }],
     }
   });
@@ -33,132 +26,71 @@ const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; fi
   };
 };
 
-/**
- * Stage 3: REFINERY ENGINE (Institutional Classification)
- * Deterministic classifier following strict governance rules.
- */
 export const resolveIdentityRefinery = async (
   declaredTitle: string,
   rawLeadId: string,
   leadInfo: { email: string; firstName: string; lastName: string; firmName: string; website?: string }
 ): Promise<InfyEnrichedData> => {
   const ai = getAiClient();
-
-  // PASS 1: INTERNAL SERP DISCOVERY
   const evidenceData = await fetchEvidence(leadInfo);
 
-  // PASS 2: DETERMINISTIC CLASSIFICATION
   const resolutionPrompt = `
-LEAD PROFILE:
-- Name: ${leadInfo.firstName} ${leadInfo.lastName}
-- Target Firm: ${leadInfo.firmName}
-- Declared Title: ${declaredTitle}
-
-EVIDENCE FROM SEARCH:
-${JSON.stringify(evidenceData.results)}
-
-CONTROLLED TAXONOMY TABLES (MANDATORY MATCHING):
-- Job Levels (STRICT 1-4 ONLY): ${JSON.stringify(INFY_JOB_LEVELS)}
-- Function Taxonomy (MATCH EXACT ROW): ${JSON.stringify(INFY_FUNCTION_TAXONOMY)}
-- Industries: ${JSON.stringify(INFY_INDUSTRIES)}
-- Country-Region Map: ${JSON.stringify(COUNTRY_REGION_MAPPING)}
+LEAD: ${leadInfo.firstName} ${leadInfo.lastName} @ ${leadInfo.firmName} (${declaredTitle})
+EVIDENCE: ${JSON.stringify(evidenceData.results)}
+FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.function_taxonomy_id, f0: t.f0, f1: t.f1 })))}
 `;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: resolutionPrompt,
     config: {
-      systemInstruction: `You are an Institutional Classification Engine.
-STRICT GOVERNANCE:
-1. TAXONOMY: You MUST select exactly ONE row from the provided Function Taxonomy table. 
-   - DO NOT combine an F0 from one row with an F1 from another.
-   - Example: If F1 'Channel Sales' is not in the table for 'Sales', you MUST NOT return it. Select the closest existing F1 from the 'Sales' rows or return null.
-2. JOB LEVEL: Only L1, L2, L3, or L4 are permitted. Level 5 is FORBIDDEN.
-3. LOCATION (MANDATORY): City and State MUST NOT BE NULL.
-   - If the person's specific office is unknown, YOU MUST USE THE COMPANY HEADQUARTERS location from the evidence.
-4. ZIP CODE: MUST BE A REAL POSTAL CODE for the resolved city. DO NOT RETURN '00000'. Search for the HQ zip code if necessary.
-5. STANDARD TITLE: Expand all abbreviations (VP -> Vice President). Format: [Seniority], [Department], [Location].
-
-OUTPUT JSON ONLY.`,
+      systemInstruction: `You are a Deterministic Resolver for LabelNest Refinery. Output JSON ONLY.
+1. Return exactly one function_taxonomy_id from the provided list.
+2. Return a job_level_slug: "L1-FOUNDER", "L2-PRESIDENT", "L3-VP", or "L4-MANAGER".
+3. ZIP code MUST be verified and MUST correctly match the City and State. 
+4. If the specific work location ZIP is unknown, you MUST use the Company's HQ ZIP. 
+5. CRITICAL: "00000" and "99999" are strictly forbidden. If you cannot find any valid ZIP through search or HQ fallback, return null for the zip field.`,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          standard_title: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING },
-              confidence: { type: Type.NUMBER }
-            },
-            required: ["value", "confidence"]
-          },
-          job_level: {
-            type: Type.OBJECT,
-            properties: {
-              job_level_id: { type: Type.STRING, enum: ["L1-FOUNDER", "L2-PRESIDENT", "L3-VP", "L4-MANAGER"] },
-              confidence: { type: Type.NUMBER }
-            },
-            required: ["job_level_id", "confidence"]
-          },
-          function: {
-            type: Type.OBJECT,
-            properties: {
-              function_taxonomy_id: { type: Type.STRING, nullable: true },
-              confidence: { type: Type.NUMBER }
-            },
-            required: ["function_taxonomy_id", "confidence"]
-          },
-          industry: {
-            type: Type.OBJECT,
-            properties: {
-              industry_id: { type: Type.STRING, nullable: true },
-              confidence: { type: Type.NUMBER }
-            },
-            required: ["industry_id", "confidence"]
-          },
+          standard_title: { type: Type.STRING },
+          job_level_slug: { type: Type.STRING, enum: ["L1-FOUNDER", "L2-PRESIDENT", "L3-VP", "L4-MANAGER"] },
+          function_taxonomy_id: { type: Type.STRING },
+          industry_id: { type: Type.STRING },
           location: {
             type: Type.OBJECT,
             properties: {
               city: { type: Type.STRING },
               state: { type: Type.STRING },
               country: { type: Type.STRING },
-              zip: { type: Type.STRING }
+              zip: { type: Type.STRING, nullable: true }
             },
-            required: ["city", "state", "country", "zip"]
+            required: ["city", "state", "country"]
           },
-          profile: {
-            type: Type.OBJECT,
-            properties: {
-              linkedin_url: { type: Type.STRING, nullable: true },
-              source: { type: Type.STRING, enum: ["serp", "none"] }
-            },
-            required: ["linkedin_url", "source"]
-          },
-          intent_signal: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING, enum: ["Low", "Medium", "High"] },
-              confidence: { type: Type.NUMBER }
-            },
-            required: ["value", "confidence"]
-          }
+          linkedin_url: { type: Type.STRING, nullable: true },
+          confidence: { type: Type.NUMBER }
         },
-        required: ["standard_title", "job_level", "function", "industry", "location", "profile", "intent_signal"]
+        required: ["standard_title", "job_level_slug", "function_taxonomy_id", "industry_id", "location", "confidence"]
       }
     }
   });
 
   const intel = JSON.parse(response.text || "{}");
   
-  // Strict resolution from tables based on IDs
-  const levelMatch = INFY_JOB_LEVELS.find(l => l.job_level_id === intel.job_level.job_level_id);
-  const funcMatch = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === intel.function.function_taxonomy_id);
-  const indMatch = INFY_INDUSTRIES.find(i => i.industry_id === intel.industry.industry_id);
+  // MAP SLUGS/IDs to DATABASE UUIDs
+  const levelMatch = INFY_JOB_LEVELS.find(l => l.slug === intel.job_level_slug);
+  const funcMatch = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === intel.function_taxonomy_id);
+  const indMatch = INFY_INDUSTRIES.find(i => i.industry_id === intel.industry_id);
   
-  const resolvedCountry = intel.location.country || "United States";
-  const region = COUNTRY_REGION_MAPPING[resolvedCountry] || "Global";
+  const country = intel.location.country || "United States";
+  const region = COUNTRY_REGION_MAPPING[country] || "Global";
 
-  const now = new Date().toISOString();
+  // Final sanitization of ZIP before DB write to prevent any placeholder leaks
+  const rawZip = intel.location.zip;
+  const sanitizedZip = (rawZip === "00000" || rawZip === "99999" || !rawZip) 
+    ? null 
+    : String(rawZip).trim();
 
   return {
     job_id: `INFY-DET-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
@@ -168,40 +100,39 @@ OUTPUT JSON ONLY.`,
     last_name: leadInfo.lastName,
     firm_name: leadInfo.firmName,
     website: leadInfo.website || null,
-    standard_title: intel.standard_title.value,
+    standard_title: intel.standard_title,
     salutation: null,
     job_level: levelMatch?.job_level_numeric || 4,
-    job_level_id: intel.job_level.job_level_id,
+    job_level_id: levelMatch?.job_level_id || null,
     job_role: funcMatch?.job_role || null,
     job_role_id: funcMatch?.job_role_id || null,
-    function_taxonomy_id: intel.function.function_taxonomy_id,
+    function_taxonomy_id: intel.function_taxonomy_id,
     f0: funcMatch?.f0 || null,
     f1: funcMatch?.f1 || null,
     f2: funcMatch?.f2 || null,
     industry: indMatch?.industry_name || null,
-    industry_id: intel.industry.industry_id,
+    industry_id: intel.industry_id,
     vertical: indMatch?.vertical_code || null,
     vertical_id: indMatch?.vertical_id || null,
     city: intel.location.city,
     state: intel.location.state,
-    zip: intel.location.zip, 
-    country: resolvedCountry,
+    zip: sanitizedZip,
+    country: country,
     region: region,
     phone: null,
-    linkedin_url: intel.profile.linkedin_url,
-    intent_score: intel.intent_signal.confidence,
-    intent_signal: intel.intent_signal.value,
-    is_verified: intel.intent_signal.confidence > 85,
+    linkedin_url: intel.linkedin_url,
+    intent_score: intel.confidence,
+    intent_signal: intel.confidence > 70 ? "High" : intel.confidence > 40 ? "Medium" : "Low",
+    is_verified: intel.confidence > 85,
     tenant_id: "INSTITUTIONAL-DEFAULT",
     project_id: "REFINERY-MAIN",
     resolution_status: "classified",
-    last_synced_at: now,
-    created_at: now,
+    last_synced_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
     raw_evidence_json: {
       serp_query: evidenceData.query,
       serp_results: evidenceData.results,
-      ai_output: intel,
-      discovery_logic: "hq_mandatory_fallback_v8"
+      ai_output: intel
     }
   };
 };
@@ -210,7 +141,7 @@ export const resolveCountryFromState = async (stateInput: string) => {
   const ai = getAiClient();
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Map the administrative unit "${stateInput}" to its full Country and Region.`,
+    contents: `Map "${stateInput}" to Country and Region.`,
     config: { 
       responseMimeType: "application/json",
       responseSchema: {
