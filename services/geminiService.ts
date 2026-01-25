@@ -49,7 +49,7 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
 2. Return a job_level_slug: "L1-FOUNDER", "L2-PRESIDENT", "L3-VP", or "L4-MANAGER".
 3. ZIP code MUST be verified and MUST correctly match the City and State. 
 4. If the specific work location ZIP is unknown, you MUST use the Company's HQ ZIP. 
-5. CRITICAL: "00000" and "99999" are strictly forbidden. If you cannot find any valid ZIP through search or HQ fallback, return null for the zip field.`,
+5. CRITICAL: "00000" and "99999" are strictly forbidden. If you cannot find any valid ZIP through search or HQ fallback, return an empty string for the zip field.`,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -64,14 +64,14 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
               city: { type: Type.STRING },
               state: { type: Type.STRING },
               country: { type: Type.STRING },
-              zip: { type: Type.STRING, nullable: true }
+              zip: { type: Type.STRING }
             },
-            required: ["city", "state", "country"]
+            required: ["city", "state", "country", "zip"]
           },
-          linkedin_url: { type: Type.STRING, nullable: true },
+          linkedin_url: { type: Type.STRING },
           confidence: { type: Type.NUMBER }
         },
-        required: ["standard_title", "job_level_slug", "function_taxonomy_id", "industry_id", "location", "confidence"]
+        required: ["standard_title", "job_level_slug", "function_taxonomy_id", "industry_id", "location", "confidence", "linkedin_url"]
       }
     }
   });
@@ -86,10 +86,10 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
   const country = intel.location.country || "United States";
   const region = COUNTRY_REGION_MAPPING[country] || "Global";
 
-  // Final sanitization of ZIP before DB write to prevent any placeholder leaks
+  // Final sanitization of ZIP: Placeholder becomes empty string, never null
   const rawZip = intel.location.zip;
   const sanitizedZip = (rawZip === "00000" || rawZip === "99999" || !rawZip) 
-    ? null 
+    ? "" 
     : String(rawZip).trim();
 
   return {
@@ -99,29 +99,29 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
     first_name: leadInfo.firstName,
     last_name: leadInfo.lastName,
     firm_name: leadInfo.firmName,
-    website: leadInfo.website || null,
-    standard_title: intel.standard_title,
-    salutation: null,
+    website: leadInfo.website || "",
+    standard_title: intel.standard_title || "",
+    salutation: "",
     job_level: levelMatch?.job_level_numeric || 4,
-    job_level_id: levelMatch?.job_level_id || null,
-    job_role: funcMatch?.job_role || null,
-    job_role_id: funcMatch?.job_role_id || null,
-    function_taxonomy_id: intel.function_taxonomy_id,
-    f0: funcMatch?.f0 || null,
-    f1: funcMatch?.f1 || null,
-    f2: funcMatch?.f2 || null,
-    industry: indMatch?.industry_name || null,
-    industry_id: intel.industry_id,
-    vertical: indMatch?.vertical_code || null,
-    vertical_id: indMatch?.vertical_id || null,
-    city: intel.location.city,
-    state: intel.location.state,
+    job_level_id: levelMatch?.job_level_id || "",
+    job_role: funcMatch?.job_role || "",
+    job_role_id: funcMatch?.job_role_id || "",
+    function_taxonomy_id: intel.function_taxonomy_id || "",
+    f0: funcMatch?.f0 || "",
+    f1: funcMatch?.f1 || "",
+    f2: funcMatch?.f2 || "",
+    industry: indMatch?.industry_name || "",
+    industry_id: intel.industry_id || "",
+    vertical: indMatch?.vertical_code || "",
+    vertical_id: indMatch?.vertical_id || "",
+    city: intel.location.city || "",
+    state: intel.location.state || "",
     zip: sanitizedZip,
     country: country,
     region: region,
-    phone: null,
-    linkedin_url: intel.profile.linkedin_url ?? null,
-    intent_score: intel.confidence,
+    phone: "",
+    linkedin_url: intel.linkedin_url || "",
+    intent_score: intel.confidence || 0,
     intent_signal: intel.confidence > 70 ? "High" : intel.confidence > 40 ? "Medium" : "Low",
     is_verified: intel.confidence > 85,
     tenant_id: "INSTITUTIONAL-DEFAULT",
