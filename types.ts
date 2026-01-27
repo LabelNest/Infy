@@ -1,6 +1,7 @@
 
 export type EnrichmentStage = 'QUEUED' | 'PROCESSING_SERP' | 'PROCESSING_AI' | 'COMPLETED' | 'ERROR';
 export type EnrichmentState = 'queued' | 'running' | 'completed' | 'error';
+export type AccessStatus = 'pending' | 'approved' | 'denied';
 
 export interface LeadInput {
   email: string;
@@ -18,30 +19,31 @@ export interface InfyEnrichedData {
   first_name: string;
   last_name: string;
   firm_name: string;
-  website: string | null;
-  standard_title: string | null;
-  job_level: number | null;
-  job_level_id: string | null;
-  job_role: string | null;
-  job_role_id: string | null;
-  function_taxonomy_id: string | null;
-  f0: string | null;
-  f1: string | null;
-  f2: string | null;
-  vertical: string | null;
-  vertical_id: string | null;
-  industry: string | null;
-  industry_id: string | null;
-  // Professional salutation resolved during AI refinery
-  salutation: string | null;
-  city: string | null;
-  state: string | null;
-  zip: string; // Cannot be null
-  country: string | null;
-  region: string | null; // Cannot be null if country is resolved
-  phone: string | null;
-  linkedin_url: string | null;
-  alternate_profile_url?: string | null;
+  website: string;
+  standard_title: string;
+  job_level: number;
+  job_level_id: string;
+  job_role: string;
+  job_role_id: string;
+  function_taxonomy_id: string;
+  f0: string;
+  f1: string;
+  f2: string;
+  vertical: string;
+  vertical_id: string;
+  industry: string;
+  industry_id: string;
+  salutation: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  region: string;
+  phone: string;
+  linkedin_url: string;
+  bio_snippet: string;
+  job_description: string;
+  alternate_profile_url?: string;
   intent_score: number;
   intent_signal: "Low" | "Medium" | "High";
   is_verified: boolean;
@@ -50,6 +52,7 @@ export interface InfyEnrichedData {
   resolution_status: string;
   last_synced_at: string;
   created_at: string;
+  processed_by?: string;
   raw_evidence_json: {
     serp_query: string;
     serp_results: any;
@@ -69,4 +72,20 @@ export interface LeadRecord {
   error?: string;
   createdAt: number;
   completedAt?: number;
+}
+
+export interface AppAccessRequest {
+  id: string;
+  email: string;
+  full_name?: string;
+  status: AccessStatus;
+  created_at: string;
+}
+
+export interface UserUsageLog {
+  id: string;
+  email: string;
+  firm_name: string;
+  standard_title: string;
+  created_at: string;
 }

@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { INFY_JOB_LEVELS, INFY_FUNCTION_TAXONOMY, INFY_INDUSTRIES, COUNTRY_REGION_MAPPING } from "../constants";
 import { InfyEnrichedData } from "../types";
@@ -8,13 +9,14 @@ const getAiClient = () => {
 
 const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; firmName: string; website?: string }) => {
   const ai = getAiClient();
-  const query = `professional profile for "${leadInfo.firstName} ${leadInfo.lastName}" at "${leadInfo.firmName}" AND "${leadInfo.firmName}" corporate headquarters address city state zip`;
+  // Enhanced query to fetch bio snippets and job descriptions as per user flowchart
+  const query = `"${leadInfo.firstName} ${leadInfo.lastName}" at "${leadInfo.firmName}" linkedin profile bio AND "${leadInfo.firmName}" job description for "${leadInfo.firstName}'s" current role AND corporate HQ address`;
   
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Find professional details for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName} and their corporate HQ address.`,
+    contents: `Find the LinkedIn bio, job description, and HQ address for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}.`,
     config: {
-      systemInstruction: "Extract professional location data. Use Company HQ if individual office is missing. City, State, and Zip are mandatory. ZIP MUST be the real geographic code matching the City/State. Placeholders like 00000 or 99999 are strictly forbidden.",
+      systemInstruction: "Extract professional identity details. Prioritize LinkedIn snippets and official job descriptions. ZIP MUST be verified. '00000' is forbidden.",
       tools: [{ googleSearch: {} }],
     }
   });
@@ -44,12 +46,11 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
     model: 'gemini-3-pro-preview',
     contents: resolutionPrompt,
     config: {
-      systemInstruction: `You are a Deterministic Resolver for LabelNest Refinery. Output JSON ONLY.
-1. Return exactly one function_taxonomy_id from the provided list.
-2. Return a job_level_slug: "L1-FOUNDER", "L2-PRESIDENT", "L3-VP", or "L4-MANAGER".
-3. ZIP code MUST be verified and MUST correctly match the City and State. 
-4. If the specific work location ZIP is unknown, you MUST use the Company's HQ ZIP. 
-5. CRITICAL: "00000" and "99999" are strictly forbidden. If you cannot find any valid ZIP through search or HQ fallback, return an empty string for the zip field.`,
+      systemInstruction: `You are a Deterministic Resolver. Output JSON ONLY.
+1. Map to exactly one function_taxonomy_id.
+2. Determine job_level_slug: "L1-FOUNDER", "L2-PRESIDENT", "L3-VP", or "L4-MANAGER".
+3. Extract bio_snippet (from LinkedIn/Bio results) and job_description (found role duties).
+4. CRITICAL: ZIP MUST be real. If unknown, use Company HQ ZIP. "00000" and "99999" are forbidden (use empty string instead).`,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -58,6 +59,8 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
           job_level_slug: { type: Type.STRING, enum: ["L1-FOUNDER", "L2-PRESIDENT", "L3-VP", "L4-MANAGER"] },
           function_taxonomy_id: { type: Type.STRING },
           industry_id: { type: Type.STRING },
+          bio_snippet: { type: Type.STRING },
+          job_description: { type: Type.STRING },
           location: {
             type: Type.OBJECT,
             properties: {
@@ -71,14 +74,13 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
           linkedin_url: { type: Type.STRING },
           confidence: { type: Type.NUMBER }
         },
-        required: ["standard_title", "job_level_slug", "function_taxonomy_id", "industry_id", "location", "confidence", "linkedin_url"]
+        required: ["standard_title", "job_level_slug", "function_taxonomy_id", "industry_id", "location", "confidence", "linkedin_url", "bio_snippet", "job_description"]
       }
     }
   });
 
   const intel = JSON.parse(response.text || "{}");
   
-  // MAP SLUGS/IDs to DATABASE UUIDs
   const levelMatch = INFY_JOB_LEVELS.find(l => l.slug === intel.job_level_slug);
   const funcMatch = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === intel.function_taxonomy_id);
   const indMatch = INFY_INDUSTRIES.find(i => i.industry_id === intel.industry_id);
@@ -86,7 +88,6 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
   const country = intel.location.country || "United States";
   const region = COUNTRY_REGION_MAPPING[country] || "Global";
 
-  // Final sanitization of ZIP: Placeholder becomes empty string, never null
   const rawZip = intel.location.zip;
   const sanitizedZip = (rawZip === "00000" || rawZip === "99999" || !rawZip) 
     ? "" 
@@ -121,6 +122,8 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
     region: region,
     phone: "",
     linkedin_url: intel.linkedin_url || "",
+    bio_snippet: intel.bio_snippet || "",
+    job_description: intel.job_description || "",
     intent_score: intel.confidence || 0,
     intent_signal: intel.confidence > 70 ? "High" : intel.confidence > 40 ? "Medium" : "Low",
     is_verified: intel.confidence > 85,

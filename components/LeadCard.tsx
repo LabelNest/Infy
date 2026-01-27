@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { LeadRecord } from '../types';
 import { calculateCompleteness } from '../App';
@@ -20,19 +21,14 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
   const completeness = calculateCompleteness(lead.enriched);
   const hasLinkedin = isCompleted && lead.enriched?.linkedin_url;
 
-  // Resolve Human Readable labels for IDs (The "Real Words" mapping)
   const resolvedLevelLabel = INFY_JOB_LEVELS.find(l => l.job_level_id === lead.enriched?.job_level_id)?.label;
   const resolvedFuncRow = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === lead.enriched?.function_taxonomy_id);
-  
-  // Real words for Role: e.g. "Information Technology" or "Business"
   const resolvedRoleLabel = resolvedFuncRow?.job_role || lead.enriched?.job_role;
 
-  // Real words for Taxonomy: e.g. "Information Technology > Application Development"
   const resolvedTaxonomyLabel = resolvedFuncRow 
     ? `${resolvedFuncRow.f0}${resolvedFuncRow.f1 ? ` > ${resolvedFuncRow.f1}` : ''}`
     : null;
 
-  // Real words for Industry
   const resolvedIndustryLabel = INFY_INDUSTRIES.find(i => i.industry_id === lead.enriched?.industry_id)?.industry_name;
 
   return (
@@ -43,8 +39,8 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
       isFailed ? 'border-rose-500 bg-rose-50/10' : 'border-slate-200 shadow-sm'
     }`}>
       {showCheckbox && (
-        <div onClick={() => onSelect?.(lead.id)} className="absolute left-0 top-0 bottom-0 w-16 z-10 flex items-center justify-center cursor-pointer">
-          <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'}`}>
+        <div onClick={() => onSelect?.(lead.id)} className="absolute left-0 top-0 bottom-0 w-16 z-10 flex items-center justify-center cursor-pointer border-r border-slate-100 bg-slate-50/30">
+          <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isSelected ? 'bg-indigo-600 border-indigo-600 shadow-md' : 'border-slate-300 bg-white'}`}>
             {isSelected && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>}
           </div>
         </div>
@@ -52,7 +48,7 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
 
       <div className={`px-8 py-6 flex items-center justify-between ${showCheckbox ? 'pl-20' : ''}`}>
         <div className="flex items-center gap-6 flex-1 min-w-0">
-          <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black transition-all ${isCompleted ? 'bg-emerald-600 text-white' : isFailed ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+          <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black transition-all ${isCompleted ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : isFailed ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20' : 'bg-slate-100 text-slate-400'}`}>
             <span className="text-[12px]">{isCompleted ? `${completeness}%` : '---'}</span>
             <span className="text-[7px] uppercase tracking-tighter opacity-70">Density</span>
           </div>
@@ -79,7 +75,7 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
           {isFailed && (
             <button onClick={() => onRetry(lead.id)} className="text-[10px] font-black text-rose-500 uppercase tracking-widest border border-rose-200 px-4 py-2 rounded-lg hover:bg-rose-500 hover:text-white transition-all">Retry</button>
           )}
-          <button onClick={() => setIsExpanded(!isExpanded)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+          <button onClick={() => setIsExpanded(!isExpanded)} className={`p-2 hover:bg-slate-100 rounded-lg transition-colors ${isExpanded ? 'bg-slate-100' : ''}`}>
             <svg className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
           </button>
         </div>
@@ -92,51 +88,65 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
       )}
 
       {isExpanded && lead.enriched && (
-        <div className="p-10 border-t border-slate-200 bg-slate-50 space-y-10">
-          <div>
-            <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full"></span>
-              Institutional Taxonomy
-            </h4>
-            <div className="grid grid-cols-4 gap-8">
-              <DataGroup label="F0: Master Function" value={lead.enriched.f0} />
-              <DataGroup label="F1: Sub-Function" value={lead.enriched.f1} />
-              <DataGroup label="F2: Specialty" value={lead.enriched.f2} />
-              <DataGroup label="Role ID" value={resolvedRoleLabel} />
-              <DataGroup label="Standard Title" value={lead.enriched.standard_title} />
-              <DataGroup label="Level ID" value={resolvedLevelLabel} />
-              <DataGroup label="Job Level" value={String(lead.enriched.job_level)} />
-              <DataGroup label="Taxonomy ID" value={resolvedTaxonomyLabel} />
-            </div>
-          </div>
+        <div className="p-10 border-t border-slate-200 bg-slate-50 space-y-12 animate-in slide-in-from-top-4 duration-300">
+          <div className="grid grid-cols-12 gap-10">
+            {/* Intel Briefing */}
+            <div className="col-span-12 lg:col-span-7 space-y-10">
+              <div>
+                <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full"></span>
+                  Professional Intelligence
+                </h4>
+                <div className="grid grid-cols-2 gap-8">
+                  <DataGroup label="Bio Snippet" value={lead.enriched.bio_snippet} isLong />
+                  <DataGroup label="Job Description" value={lead.enriched.job_description} isLong />
+                </div>
+              </div>
 
-          <div>
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
-              Governed Geographics
-            </h4>
-            <div className="grid grid-cols-4 gap-8">
-              <DataGroup label="Region" value={lead.enriched.region} />
-              <DataGroup label="Country" value={lead.enriched.country} />
-              <DataGroup label="State" value={lead.enriched.state} />
-              <DataGroup label="City" value={lead.enriched.city} />
-              <DataGroup label="ZIP Code" value={lead.enriched.zip} />
-              <DataGroup label="Vertical" value={lead.enriched.vertical} />
-              <DataGroup label="Industry" value={lead.enriched.industry} />
-              <DataGroup label="Industry ID" value={resolvedIndustryLabel} />
+              <div>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
+                  Institutional Taxonomy
+                </h4>
+                <div className="grid grid-cols-3 gap-8">
+                  <DataGroup label="F0: Master Function" value={lead.enriched.f0} />
+                  <DataGroup label="F1: Sub-Function" value={lead.enriched.f1} />
+                  <DataGroup label="F2: Specialty" value={lead.enriched.f2} />
+                  <DataGroup label="Role ID" value={resolvedRoleLabel} />
+                  <DataGroup label="Standard Title" value={lead.enriched.standard_title} />
+                  <DataGroup label="Level ID" value={resolvedLevelLabel} />
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div>
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
-              Audit Metadata
-            </h4>
-            <div className="grid grid-cols-4 gap-8">
-              <DataGroup label="Intent" value={lead.enriched.intent_signal} sub={`${lead.enriched.intent_score}% score`} />
-              <DataGroup label="Resolution" value={lead.enriched.resolution_status} />
-              <DataGroup label="Last Synced" value={new Date(lead.enriched.last_synced_at).toLocaleString()} />
-              <DataGroup label="Asset ID" value={lead.enriched.job_id} />
+            {/* Geographics & Metadata */}
+            <div className="col-span-12 lg:col-span-5 space-y-10">
+              <div>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
+                  Governed Geographics
+                </h4>
+                <div className="grid grid-cols-2 gap-8">
+                  <DataGroup label="Region" value={lead.enriched.region} />
+                  <DataGroup label="Country" value={lead.enriched.country} />
+                  <DataGroup label="State" value={lead.enriched.state} />
+                  <DataGroup label="City" value={lead.enriched.city} />
+                  <DataGroup label="ZIP Code" value={lead.enriched.zip} />
+                  <DataGroup label="Industry" value={lead.enriched.industry} />
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>
+                  Audit Metadata
+                </h4>
+                <div className="grid grid-cols-2 gap-8">
+                  <DataGroup label="Intent" value={lead.enriched.intent_signal} sub={`${lead.enriched.intent_score}% score`} />
+                  <DataGroup label="Resolution" value={lead.enriched.resolution_status} />
+                  <DataGroup label="Asset ID" value={lead.enriched.job_id} />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -145,12 +155,12 @@ export const LeadCard: React.FC<Props> = ({ lead, onRetry, isSelected, onSelect,
   );
 };
 
-const DataGroup = ({ label, value, sub }: { label: string, value: string | null | undefined, sub?: string }) => {
+const DataGroup = ({ label, value, sub, isLong }: { label: string, value: string | null | undefined, sub?: string, isLong?: boolean }) => {
   const isPending = !value || value === 'null' || value === 'NULL' || value === '00000';
   return (
-    <div className="min-w-0">
+    <div className={`min-w-0 ${isLong ? 'col-span-full' : ''}`}>
       <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">{label}</label>
-      <div className={`text-[11px] font-black uppercase truncate ${isPending ? 'text-slate-300' : 'text-slate-800'}`}>
+      <div className={`text-[11px] font-black uppercase ${isPending ? 'text-slate-300' : 'text-slate-800'} ${isLong ? 'leading-relaxed normal-case font-bold' : 'truncate'}`}>
         {isPending ? 'PENDING RESOLUTION' : value}
       </div>
       {sub && !isPending && <div className="text-[9px] font-bold text-slate-400 uppercase mt-1">{sub}</div>}
