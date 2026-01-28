@@ -17,8 +17,11 @@ export interface CreditRequest {
 
 export const checkSupabaseConnection = async () => {
   try {
-    const { error } = await supabase.from('infy_enriched_leads').select('count', { count: 'exact', head: true });
-    if (error) return false;
+    const { error } = await supabase.from('infy_app_access').select('count', { count: 'exact', head: true });
+    if (error) {
+      console.error("Supabase Connection Error:", error);
+      return false;
+    }
     return true;
   } catch (err) {
     return false;
@@ -27,18 +30,35 @@ export const checkSupabaseConnection = async () => {
 
 // --- ACCESS GOVERNANCE LOGIC ---
 
-export const getAccessStatus = async (email: string): Promise<AccessStatus | 'none'> => {
+export const getAccessStatus = async (email: string): Promise<AccessStatus | 'none' | 'error'> => {
   const normalized = email.toLowerCase().trim();
+  
+  // Master bypass for administrative owner
   if (normalized === 'ankit@labelnest.in') return 'approved';
   
-  const { data, error } = await supabase
-    .from('infy_app_access')
-    .select('status')
-    .ilike('email', normalized)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('infy_app_access')
+      .select('status')
+      .ilike('email', normalized)
+      .maybeSingle(); // maybeSingle handles 0 rows without throwing an error
+      
+    if (error) {
+      console.error(`Refinery Security Check failed for ${normalized}:`, error.message);
+      // If we get a 403 or RLS error, we need to know
+      return 'error';
+    }
     
-  if (error || !data) return 'none';
-  return data.status;
+    if (!data) {
+      console.warn(`Refinery: No access record found for ${normalized}`);
+      return 'none';
+    }
+    
+    return data.status as AccessStatus;
+  } catch (err) {
+    console.error("Critical Auth Exception:", err);
+    return 'error';
+  }
 };
 
 export const requestAccess = async (email: string, fullName?: string) => {
@@ -51,14 +71,12 @@ export const requestAccess = async (email: string, fullName?: string) => {
 
 export const createManualUser = async (email: string, fullName: string, initialCredits: number = 100) => {
   const normalized = email.toLowerCase().trim();
-  // 1. Authorize identity
   await supabase.from('infy_app_access').upsert({
     email: normalized,
     full_name: fullName,
     status: 'approved'
   }, { onConflict: 'email' });
 
-  // 2. Set initial credits
   await supabase.from('infy_user_credits').upsert({
     user_email: normalized,
     balance: initialCredits
@@ -89,12 +107,21 @@ export const getUserBalance = async (email: string): Promise<number> => {
       .from('infy_user_credits')
       .select('balance')
       .ilike('user_email', normalized)
-      .single();
+      .maybeSingle();
     
-    if (error || !data) {
-      // Initialize credits if user doesn't exist
-      await supabase.from('infy_user_credits').insert({ user_email: normalized, balance: 10 });
-      return 10;
+    if (error) {
+      console.error("Balance fetch error:", error);
+      return 0;
+    }
+
+    if (!data) {
+      // Auto-initialize base discovery credits if user exists in access but not in credits
+      const access = await getAccessStatus(normalized);
+      if (access === 'approved') {
+        await supabase.from('infy_user_credits').insert({ user_email: normalized, balance: 10 });
+        return 10;
+      }
+      return 0;
     }
     return data.balance;
   } catch {
@@ -136,11 +163,9 @@ export const resolveCreditRequest = async (requestId: string, userEmail: string,
   const status = approved ? 'approved' : 'denied';
   const normalized = userEmail.toLowerCase().trim();
   
-  // 1. Update the request status
   await supabase.from('infy_credit_requests').update({ status }).eq('id', requestId);
 
   if (approved) {
-    // 2. Add credits to user's balance
     const current = await getUserBalance(normalized);
     await supabase.from('infy_user_credits').update({ balance: current + amount }).ilike('user_email', normalized);
   }
@@ -171,7 +196,6 @@ export const saveEnrichedLead = async (lead: LeadRecord, userEmail: string) => {
   const normalizedUser = userEmail.toLowerCase().trim();
 
   try {
-    // Deduct credit before final save
     const creditDeducted = await deductCredit(normalizedUser);
     if (!creditDeducted) {
       throw new Error("Insufficient intelligence credits");
@@ -229,7 +253,7 @@ export const saveEnrichedLead = async (lead: LeadRecord, userEmail: string) => {
       salutation: e.salutation,
       phone: e.phone,
       created_at: e.created_at || new Date().toISOString(),
-      processed_by: normalizedUser, // Track who processed this lead
+      processed_by: normalizedUser,
       standard_title_confidence: e.intent_score, 
       function_confidence: e.intent_score
     };

@@ -8,24 +8,17 @@ interface Props {
 }
 
 const ADMIN_EMAIL = 'ankit@labelnest.in';
-
-/**
- * DETERMINISTIC SECURITY CLEARANCE
- * Primary: process.env.ADMIN_PASSWORD (injected by environment)
- * Fallback: Hardcoded master key for direct institutional access
- */
 const ADMIN_PASSWORD_SECRET = (process.env.ADMIN_PASSWORD || 'LabelAnkit2025').trim();
 
 export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLocked, setIsLocked] = useState(false);
-  const [status, setStatus] = useState<AccessStatus | 'none' | 'checking'>('checking');
+  const [status, setStatus] = useState<AccessStatus | 'none' | 'checking' | 'error'>('checking');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // 1. Check if admin has a current session
     const adminSession = sessionStorage.getItem('labelnest_admin_active');
     if (adminSession) {
       setEmail(ADMIN_EMAIL);
@@ -33,7 +26,6 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
       return;
     }
 
-    // 2. Check for persisted standard user identity
     const savedEmail = localStorage.getItem('labelnest_identity');
     if (savedEmail && savedEmail !== ADMIN_EMAIL) {
       setEmail(savedEmail);
@@ -75,6 +67,8 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
       onAuthenticated(normalizedEmail);
     } else if (s === 'none') {
       setError('Identity not found in refinery vault.');
+    } else if (s === 'error') {
+      setError('Refinery connection error. Check Database RLS.');
     } else if (s === 'pending') {
       setError('Refinery clearance is still pending approval.');
     } else if (s === 'denied') {
@@ -88,7 +82,6 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
     setLoading(true);
     setError('');
 
-    // Reliable check against the resolved secret
     if (password.trim() === ADMIN_PASSWORD_SECRET) {
       sessionStorage.setItem('labelnest_admin_active', 'true');
       onAuthenticated(ADMIN_EMAIL);
@@ -117,7 +110,6 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
     <div className="min-h-screen bg-[#000B14] flex items-center justify-center p-6 font-sans">
       <div className="max-w-md w-full animate-in fade-in zoom-in duration-700">
         
-        {/* Header Section */}
         <div className="text-center mb-12">
           <div className="relative inline-block">
             <div className="w-24 h-24 bg-gradient-to-br from-indigo-600 to-indigo-900 rounded-[32px] flex items-center justify-center text-white mx-auto shadow-2xl mb-8 border border-white/10 ring-8 ring-indigo-500/5">
@@ -136,7 +128,7 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
         <div className="bg-white/5 border border-white/10 rounded-[48px] p-10 backdrop-blur-3xl shadow-2xl relative overflow-hidden group">
           <div className="absolute -top-20 -right-20 w-40 h-40 bg-indigo-600/10 blur-[60px] rounded-full group-hover:bg-indigo-600/20 transition-all duration-1000"></div>
 
-          {(status === 'none' || status === 'denied') && (
+          {(status === 'none' || status === 'denied' || status === 'error') && (
             <div className="space-y-6">
               {!isLocked ? (
                 <form onSubmit={handleInitialEntry} className="space-y-6">
@@ -152,9 +144,12 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
                     />
                   </div>
                   {error && (
-                    <div className="flex items-center justify-center gap-2 text-rose-500 animate-in slide-in-from-top-2">
-                       <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                       <p className="text-[10px] font-black uppercase tracking-widest">{error}</p>
+                    <div className="flex flex-col items-center justify-center gap-2 text-rose-500 animate-in slide-in-from-top-2">
+                       <div className="flex items-center gap-2">
+                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                         <p className="text-[10px] font-black uppercase tracking-widest">{error}</p>
+                       </div>
+                       {status === 'error' && <p className="text-[8px] text-slate-500 normal-case opacity-60">Open Console (F12) for technical trace</p>}
                     </div>
                   )}
                   <button 
@@ -218,21 +213,6 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
               <div>
                 <h3 className="text-white font-black uppercase tracking-widest mb-2">Access Pending</h3>
                 <p className="text-slate-500 text-[10px] font-bold uppercase leading-relaxed tracking-widest">Your request has been logged.<br/>Owner approval required (ankit@labelnest.in)</p>
-              </div>
-              <button onClick={() => setStatus('none')} className="text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-white transition-colors pt-4 block mx-auto underline">Return to login</button>
-            </div>
-          )}
-
-          {status === 'denied' && (
-            <div className="text-center py-6 space-y-6 mt-6 animate-in fade-in duration-500">
-              <div className="w-16 h-16 bg-rose-500/20 border border-rose-500/30 rounded-full flex items-center justify-center text-rose-500 mx-auto">
-                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-rose-500 font-black uppercase tracking-widest mb-2">Entry Refused</h3>
-                <p className="text-slate-500 text-[10px] font-bold uppercase leading-relaxed tracking-widest">This identity has been restricted.<br/>Contact administration for clearance.</p>
               </div>
               <button onClick={() => setStatus('none')} className="text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-white transition-colors pt-4 block mx-auto underline">Return to login</button>
             </div>
