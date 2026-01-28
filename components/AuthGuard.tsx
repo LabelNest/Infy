@@ -73,6 +73,12 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
     if (s === 'approved') {
       localStorage.setItem('labelnest_identity', normalizedEmail);
       onAuthenticated(normalizedEmail);
+    } else if (s === 'none') {
+      setError('Identity not found in refinery vault.');
+    } else if (s === 'pending') {
+      setError('Refinery clearance is still pending approval.');
+    } else if (s === 'denied') {
+      setError('Access to this identity has been restricted.');
     }
     setLoading(false);
   };

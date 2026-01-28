@@ -28,12 +28,13 @@ export const checkSupabaseConnection = async () => {
 // --- ACCESS GOVERNANCE LOGIC ---
 
 export const getAccessStatus = async (email: string): Promise<AccessStatus | 'none'> => {
-  if (email === 'ankit@labelnest.in') return 'approved';
+  const normalized = email.toLowerCase().trim();
+  if (normalized === 'ankit@labelnest.in') return 'approved';
   
   const { data, error } = await supabase
     .from('infy_app_access')
     .select('status')
-    .eq('email', email)
+    .ilike('email', normalized)
     .single();
     
   if (error || !data) return 'none';
@@ -42,23 +43,24 @@ export const getAccessStatus = async (email: string): Promise<AccessStatus | 'no
 
 export const requestAccess = async (email: string, fullName?: string) => {
   return await supabase.from('infy_app_access').upsert({
-    email: email,
+    email: email.toLowerCase().trim(),
     full_name: fullName,
     status: 'pending'
   }, { onConflict: 'email' });
 };
 
 export const createManualUser = async (email: string, fullName: string, initialCredits: number = 100) => {
+  const normalized = email.toLowerCase().trim();
   // 1. Authorize identity
   await supabase.from('infy_app_access').upsert({
-    email: email,
+    email: normalized,
     full_name: fullName,
     status: 'approved'
   }, { onConflict: 'email' });
 
   // 2. Set initial credits
   await supabase.from('infy_user_credits').upsert({
-    user_email: email,
+    user_email: normalized,
     balance: initialCredits
   }, { onConflict: 'user_email' });
 };
@@ -75,22 +77,23 @@ export const resolveAccessRequest = async (email: string, status: AccessStatus) 
   return await supabase
     .from('infy_app_access')
     .update({ status })
-    .eq('email', email);
+    .ilike('email', email.toLowerCase().trim());
 };
 
 // --- CREDIT SYSTEM LOGIC ---
 
 export const getUserBalance = async (email: string): Promise<number> => {
+  const normalized = email.toLowerCase().trim();
   try {
     const { data, error } = await supabase
       .from('infy_user_credits')
       .select('balance')
-      .eq('user_email', email)
+      .ilike('user_email', normalized)
       .single();
     
     if (error || !data) {
       // Initialize credits if user doesn't exist
-      await supabase.from('infy_user_credits').insert({ user_email: email, balance: 10 });
+      await supabase.from('infy_user_credits').insert({ user_email: normalized, balance: 10 });
       return 10;
     }
     return data.balance;
@@ -100,20 +103,21 @@ export const getUserBalance = async (email: string): Promise<number> => {
 };
 
 export const deductCredit = async (email: string): Promise<boolean> => {
-  const current = await getUserBalance(email);
+  const normalized = email.toLowerCase().trim();
+  const current = await getUserBalance(normalized);
   if (current <= 0) return false;
 
   const { error } = await supabase
     .from('infy_user_credits')
     .update({ balance: current - 1 })
-    .eq('user_email', email);
+    .ilike('user_email', normalized);
 
   return !error;
 };
 
 export const requestCredits = async (email: string, amount: number) => {
   return await supabase.from('infy_credit_requests').insert({
-    user_email: email,
+    user_email: email.toLowerCase().trim(),
     requested_amount: amount,
     status: 'pending'
   });
@@ -130,14 +134,15 @@ export const getPendingRequests = async (): Promise<CreditRequest[]> => {
 
 export const resolveCreditRequest = async (requestId: string, userEmail: string, amount: number, approved: boolean) => {
   const status = approved ? 'approved' : 'denied';
+  const normalized = userEmail.toLowerCase().trim();
   
   // 1. Update the request status
   await supabase.from('infy_credit_requests').update({ status }).eq('id', requestId);
 
   if (approved) {
     // 2. Add credits to user's balance
-    const current = await getUserBalance(userEmail);
-    await supabase.from('infy_user_credits').update({ balance: current + amount }).eq('user_email', userEmail);
+    const current = await getUserBalance(normalized);
+    await supabase.from('infy_user_credits').update({ balance: current + amount }).ilike('user_email', normalized);
   }
 };
 
@@ -145,7 +150,7 @@ export const fetchUsageHistory = async (email: string): Promise<UserUsageLog[]> 
   const { data } = await supabase
     .from('infy_enriched_leads')
     .select('raw_lead_id, email, firm_name, standard_title, created_at')
-    .eq('processed_by', email)
+    .ilike('processed_by', email.toLowerCase().trim())
     .order('created_at', { ascending: false });
   
   return (data || []).map(d => ({
@@ -163,10 +168,11 @@ export const saveEnrichedLead = async (lead: LeadRecord, userEmail: string) => {
   if (!supabase || !lead.enriched) return null;
 
   const e = lead.enriched as InfyEnrichedData;
+  const normalizedUser = userEmail.toLowerCase().trim();
 
   try {
     // Deduct credit before final save
-    const creditDeducted = await deductCredit(userEmail);
+    const creditDeducted = await deductCredit(normalizedUser);
     if (!creditDeducted) {
       throw new Error("Insufficient intelligence credits");
     }
@@ -223,7 +229,7 @@ export const saveEnrichedLead = async (lead: LeadRecord, userEmail: string) => {
       salutation: e.salutation,
       phone: e.phone,
       created_at: e.created_at || new Date().toISOString(),
-      processed_by: userEmail, // Track who processed this lead
+      processed_by: normalizedUser, // Track who processed this lead
       standard_title_confidence: e.intent_score, 
       function_confidence: e.intent_score
     };
