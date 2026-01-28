@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { getAccessStatus, requestAccess } from '../services/supabase';
+import { getAccessStatus, requestAccess, runConnectivityAudit } from '../services/supabase';
 import { AccessStatus } from '../types';
 
 interface Props {
@@ -17,6 +17,7 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
   const [status, setStatus] = useState<AccessStatus | 'none' | 'checking' | 'error'>('checking');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [auditResult, setAuditResult] = useState<any>(null);
 
   useEffect(() => {
     const adminSession = sessionStorage.getItem('labelnest_admin_active');
@@ -46,6 +47,7 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
   const handleInitialEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setAuditResult(null);
     const normalizedEmail = email.toLowerCase().trim();
     
     if (!normalizedEmail.includes('@')) {
@@ -96,6 +98,14 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
     await requestAccess(email);
     setStatus('pending');
     setLoading(false);
+  };
+
+  const handleAudit = async () => {
+    setLoading(true);
+    const result = await runConnectivityAudit();
+    setAuditResult(result);
+    setLoading(false);
+    console.table(result);
   };
 
   if (status === 'checking') {
@@ -149,7 +159,20 @@ export const AuthGuard: React.FC<Props> = ({ onAuthenticated }) => {
                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
                          <p className="text-[10px] font-black uppercase tracking-widest">{error}</p>
                        </div>
-                       {status === 'error' && <p className="text-[8px] text-slate-500 normal-case opacity-60">Open Console (F12) for technical trace</p>}
+                       <button 
+                         type="button" 
+                         onClick={handleAudit}
+                         className="text-[9px] text-slate-400 uppercase tracking-widest mt-2 hover:text-white underline decoration-dashed"
+                       >
+                         Check System Connection
+                       </button>
+                    </div>
+                  )}
+                  {auditResult && (
+                    <div className="bg-black/40 rounded-xl p-4 text-[9px] font-mono text-emerald-400 border border-white/10 overflow-hidden">
+                      <p>Readable: {auditResult.table_readable ? 'YES' : 'NO'}</p>
+                      <p>Sample Emails: {auditResult.known_emails_sample.length > 0 ? auditResult.known_emails_sample.join(', ') : 'NONE FOUND'}</p>
+                      {!auditResult.table_readable && <p className="text-rose-400 mt-2">FIX: Add SELECT RLS Policy to infy_app_access table.</p>}
                     </div>
                   )}
                   <button 

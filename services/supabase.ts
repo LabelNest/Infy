@@ -17,9 +17,9 @@ export interface CreditRequest {
 
 export const checkSupabaseConnection = async () => {
   try {
-    const { error } = await supabase.from('infy_app_access').select('count', { count: 'exact', head: true });
+    const { data, error } = await supabase.from('infy_app_access').select('count', { count: 'exact', head: true });
     if (error) {
-      console.error("Supabase Connection Error:", error);
+      console.error("Supabase RLS/Connection Issue:", error.message);
       return false;
     }
     return true;
@@ -28,35 +28,38 @@ export const checkSupabaseConnection = async () => {
   }
 };
 
+export const runConnectivityAudit = async () => {
+  const results: any = { timestamp: new Date().toISOString() };
+  try {
+    const { data: cData, error: cErr } = await supabase.from('infy_app_access').select('count');
+    results.table_readable = !cErr;
+    results.table_error = cErr?.message || null;
+    
+    const { data: sData } = await supabase.from('infy_app_access').select('email').limit(5);
+    results.known_emails_sample = sData?.map(d => d.email) || [];
+  } catch (e: any) {
+    results.exception = e.message;
+  }
+  return results;
+};
+
 // --- ACCESS GOVERNANCE LOGIC ---
 
 export const getAccessStatus = async (email: string): Promise<AccessStatus | 'none' | 'error'> => {
   const normalized = email.toLowerCase().trim();
-  
-  // Master bypass for administrative owner
   if (normalized === 'ankit@labelnest.in') return 'approved';
   
   try {
     const { data, error } = await supabase
       .from('infy_app_access')
-      .select('status')
+      .select('status, email')
       .ilike('email', normalized)
-      .maybeSingle(); // maybeSingle handles 0 rows without throwing an error
+      .limit(1);
       
-    if (error) {
-      console.error(`Refinery Security Check failed for ${normalized}:`, error.message);
-      // If we get a 403 or RLS error, we need to know
-      return 'error';
-    }
-    
-    if (!data) {
-      console.warn(`Refinery: No access record found for ${normalized}`);
-      return 'none';
-    }
-    
-    return data.status as AccessStatus;
+    if (error) return 'error';
+    if (!data || data.length === 0) return 'none';
+    return data[0].status as AccessStatus;
   } catch (err) {
-    console.error("Critical Auth Exception:", err);
     return 'error';
   }
 };
@@ -71,16 +74,23 @@ export const requestAccess = async (email: string, fullName?: string) => {
 
 export const createManualUser = async (email: string, fullName: string, initialCredits: number = 100) => {
   const normalized = email.toLowerCase().trim();
-  await supabase.from('infy_app_access').upsert({
+  
+  // 1. Authorize identity
+  const { error: accessErr } = await supabase.from('infy_app_access').upsert({
     email: normalized,
     full_name: fullName,
     status: 'approved'
   }, { onConflict: 'email' });
 
-  await supabase.from('infy_user_credits').upsert({
+  if (accessErr) throw accessErr;
+
+  // 2. Initialize credits
+  const { error: creditErr } = await supabase.from('infy_user_credits').upsert({
     user_email: normalized,
     balance: initialCredits
   }, { onConflict: 'user_email' });
+
+  if (creditErr) throw creditErr;
 };
 
 export const getAllAccessRequests = async (): Promise<AppAccessRequest[]> => {
@@ -107,15 +117,11 @@ export const getUserBalance = async (email: string): Promise<number> => {
       .from('infy_user_credits')
       .select('balance')
       .ilike('user_email', normalized)
-      .maybeSingle();
+      .limit(1);
     
-    if (error) {
-      console.error("Balance fetch error:", error);
-      return 0;
-    }
+    if (error) return 0;
 
-    if (!data) {
-      // Auto-initialize base discovery credits if user exists in access but not in credits
+    if (!data || data.length === 0) {
       const access = await getAccessStatus(normalized);
       if (access === 'approved') {
         await supabase.from('infy_user_credits').insert({ user_email: normalized, balance: 10 });
@@ -123,10 +129,20 @@ export const getUserBalance = async (email: string): Promise<number> => {
       }
       return 0;
     }
-    return data.balance;
+    return data[0].balance;
   } catch {
     return 0;
   }
+};
+
+/**
+ * Direct administrative balance update
+ */
+export const updateUserBalance = async (email: string, newBalance: number) => {
+  const normalized = email.toLowerCase().trim();
+  return await supabase
+    .from('infy_user_credits')
+    .upsert({ user_email: normalized, balance: newBalance }, { onConflict: 'user_email' });
 };
 
 export const deductCredit = async (email: string): Promise<boolean> => {
@@ -167,7 +183,7 @@ export const resolveCreditRequest = async (requestId: string, userEmail: string,
 
   if (approved) {
     const current = await getUserBalance(normalized);
-    await supabase.from('infy_user_credits').update({ balance: current + amount }).ilike('user_email', normalized);
+    await updateUserBalance(normalized, current + amount);
   }
 };
 
