@@ -355,38 +355,6 @@ export const CreditSystem: React.FC<Props> = ({ currentUser, balance, onRefresh 
               )}
             </div>
           )}
-
-          {/* Pending Requests Queue (Legacy Support) */}
-          <div className="bg-[#000B14] rounded-[48px] p-10 border border-white/5">
-            <h2 className="text-base font-black text-white uppercase tracking-widest mb-10 flex items-center gap-3">
-              <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
-              External Capacity Requests
-            </h2>
-            <div className="space-y-4">
-              {pendingRequests.length === 0 ? (
-                <div className="py-16 text-center border-2 border-dashed border-white/5 rounded-[32px]">
-                  <p className="text-slate-600 text-[11px] font-black uppercase tracking-widest">Queue Clear</p>
-                </div>
-              ) : (
-                pendingRequests.map(req => (
-                  <div key={req.id} className="bg-white/5 p-6 rounded-[32px] border border-white/10 flex items-center justify-between">
-                    <div>
-                      <span className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">{req.user_email}</span>
-                      <span className="block text-xl font-black text-white">+{req.requested_amount} Units</span>
-                    </div>
-                    <div className="flex gap-3">
-                      <button onClick={() => handleResolveCredit(req, true)} className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center text-white hover:bg-emerald-600 shadow-xl">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>
-                      </button>
-                      <button onClick={() => handleResolveCredit(req, false)} className="w-12 h-12 bg-rose-500 rounded-xl flex items-center justify-center text-white hover:bg-rose-600 shadow-xl">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M6 18L18 6M6 6l12 12" /></svg>
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
         </div>
       )}
     </div>

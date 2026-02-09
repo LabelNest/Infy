@@ -9,14 +9,13 @@ const getAiClient = () => {
 
 const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; firmName: string; website?: string }) => {
   const ai = getAiClient();
-  // Enhanced query to fetch bio snippets and job descriptions as per user flowchart
-  const query = `"${leadInfo.firstName} ${leadInfo.lastName}" at "${leadInfo.firmName}" linkedin profile bio AND "${leadInfo.firmName}" job description for "${leadInfo.firstName}'s" current role AND corporate HQ address`;
+  const query = `site:linkedin.com/in/ "${leadInfo.firstName} ${leadInfo.lastName}" "${leadInfo.firmName}" professional bio`;
   
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Find the LinkedIn bio, job description, and HQ address for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}.`,
+    contents: `Find the LinkedIn URL and bio for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}.`,
     config: {
-      systemInstruction: "Extract professional identity details. Prioritize LinkedIn snippets and official job descriptions. ZIP MUST be verified. '00000' is forbidden.",
+      systemInstruction: "Research agent. Identify EXACT LinkedIn URL and professional background. Ground search results.",
       tools: [{ googleSearch: {} }],
     }
   });
@@ -36,27 +35,47 @@ export const resolveIdentityRefinery = async (
   const ai = getAiClient();
   const evidenceData = await fetchEvidence(leadInfo);
 
+  // Hardcoded ID rules for the prompt
+  const levelTable = INFY_JOB_LEVELS.map(l => ({ id: l.job_level_id, label: l.label, numeric: l.job_level_numeric }));
+  const taxonomyTable = INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.function_taxonomy_id, f0: t.f0, f1: t.f1, role: t.job_role }));
+  const industryTable = INFY_INDUSTRIES.map(i => ({ id: i.industry_id, name: i.industry_name }));
+
   const resolutionPrompt = `
-LEAD: ${leadInfo.firstName} ${leadInfo.lastName} @ ${leadInfo.firmName} (${declaredTitle})
-EVIDENCE: ${JSON.stringify(evidenceData.results)}
-FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.function_taxonomy_id, f0: t.f0, f1: t.f1 })))}
+ENRICHMENT TASK:
+Identity: ${leadInfo.firstName} ${leadInfo.lastName}
+Firm: ${leadInfo.firmName}
+Stated Title: ${declaredTitle}
+
+EVIDENCE FROM WEB: ${JSON.stringify(evidenceData.results)}
+
+STRICT MAPPING TABLES (YOU MUST ONLY USE IDs FROM THESE TABLES):
+Levels (Hard Mappings):
+- VP / Vice President / President / EVP / SVP: MUST USE ID "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l" (Level 2)
+- Executive Director / Director: MUST USE ID "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6" (Level 3)
+Full Level Table: ${JSON.stringify(levelTable)}
+
+Function Taxonomy Table: ${JSON.stringify(taxonomyTable)}
+Industry Table: ${JSON.stringify(industryTable)}
 `;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: resolutionPrompt,
     config: {
-      systemInstruction: `You are a Deterministic Resolver. Output JSON ONLY.
-1. Map to exactly one function_taxonomy_id.
-2. Determine job_level_slug: "L1-FOUNDER", "L2-PRESIDENT", "L3-VP", or "L4-MANAGER".
-3. Extract bio_snippet (from LinkedIn/Bio results) and job_description (found role duties).
-4. CRITICAL: ZIP MUST be real. If unknown, use Company HQ ZIP. "00000" and "99999" are forbidden (use empty string instead).`,
+      systemInstruction: `You are a Deterministic Data Resolver.
+STRICT INSTRUCTIONS:
+1. DO NOT create new job levels or IDs.
+2. If the person is a Vice President (VP), EVP, or SVP, map to Level ID "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l" (Numeric 2).
+3. If the person is an Executive Director or Director, map to Level ID "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6" (Numeric 3).
+4. DO NOT map Marketing roles to Sales. Use the provided Marketing taxonomy IDs.
+5. Extract the LinkedIn URL from the grounded evidence.
+6. Resolve City, State, Country. ZIP must be valid (no 00000). Use Company HQ ZIP if specific location is unknown.`,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
           standard_title: { type: Type.STRING },
-          job_level_slug: { type: Type.STRING, enum: ["L1-FOUNDER", "L2-PRESIDENT", "L3-VP", "L4-MANAGER"] },
+          job_level_id: { type: Type.STRING },
           function_taxonomy_id: { type: Type.STRING },
           industry_id: { type: Type.STRING },
           bio_snippet: { type: Type.STRING },
@@ -74,24 +93,19 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
           linkedin_url: { type: Type.STRING },
           confidence: { type: Type.NUMBER }
         },
-        required: ["standard_title", "job_level_slug", "function_taxonomy_id", "industry_id", "location", "confidence", "linkedin_url", "bio_snippet", "job_description"]
+        required: ["standard_title", "job_level_id", "function_taxonomy_id", "industry_id", "location", "confidence", "linkedin_url", "bio_snippet", "job_description"]
       }
     }
   });
 
   const intel = JSON.parse(response.text || "{}");
   
-  const levelMatch = INFY_JOB_LEVELS.find(l => l.slug === intel.job_level_slug);
+  const levelMatch = INFY_JOB_LEVELS.find(l => l.job_level_id === intel.job_level_id);
   const funcMatch = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === intel.function_taxonomy_id);
   const indMatch = INFY_INDUSTRIES.find(i => i.industry_id === intel.industry_id);
   
   const country = intel.location.country || "United States";
   const region = COUNTRY_REGION_MAPPING[country] || "Global";
-
-  const rawZip = intel.location.zip;
-  const sanitizedZip = (rawZip === "00000" || rawZip === "99999" || !rawZip) 
-    ? "" 
-    : String(rawZip).trim();
 
   return {
     job_id: `INFY-DET-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
@@ -101,23 +115,23 @@ FUNCTION TAXONOMY: ${JSON.stringify(INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.fun
     last_name: leadInfo.lastName,
     firm_name: leadInfo.firmName,
     website: leadInfo.website || "",
-    standard_title: intel.standard_title || "",
+    standard_title: intel.standard_title || declaredTitle,
     salutation: "",
     job_level: levelMatch?.job_level_numeric || 4,
-    job_level_id: levelMatch?.job_level_id || "",
+    job_level_id: intel.job_level_id,
     job_role: funcMatch?.job_role || "",
     job_role_id: funcMatch?.job_role_id || "",
-    function_taxonomy_id: intel.function_taxonomy_id || "",
+    function_taxonomy_id: intel.function_taxonomy_id,
     f0: funcMatch?.f0 || "",
     f1: funcMatch?.f1 || "",
     f2: funcMatch?.f2 || "",
     industry: indMatch?.industry_name || "",
-    industry_id: intel.industry_id || "",
+    industry_id: intel.industry_id,
     vertical: indMatch?.vertical_code || "",
     vertical_id: indMatch?.vertical_id || "",
     city: intel.location.city || "",
     state: intel.location.state || "",
-    zip: sanitizedZip,
+    zip: intel.location.zip || "",
     country: country,
     region: region,
     phone: "",
