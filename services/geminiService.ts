@@ -9,13 +9,14 @@ const getAiClient = () => {
 
 const fetchEvidence = async (leadInfo: { firstName: string; lastName: string; firmName: string; website?: string }) => {
   const ai = getAiClient();
-  const query = `site:linkedin.com/in/ "${leadInfo.firstName} ${leadInfo.lastName}" "${leadInfo.firmName}" professional bio`;
+  // Aggressive search query to force LinkedIn and Bio discovery
+  const query = `site:linkedin.com/in/ "${leadInfo.firstName} ${leadInfo.lastName}" "${leadInfo.firmName}" professional bio and job description`;
   
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Find the LinkedIn URL and bio for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}.`,
+    contents: `Find the precise LinkedIn profile URL and professional background for ${leadInfo.firstName} ${leadInfo.lastName} at ${leadInfo.firmName}. Identify if they are a VP, Director, or Manager.`,
     config: {
-      systemInstruction: "Research agent. Identify EXACT LinkedIn URL and professional background. Ground search results.",
+      systemInstruction: "You are a professional background researcher. Your primary goal is to find the EXACT LinkedIn URL (linkedin.com/in/...) from search results. Do not hallucinate URLs. Extract the bio and current role details.",
       tools: [{ googleSearch: {} }],
     }
   });
@@ -35,7 +36,7 @@ export const resolveIdentityRefinery = async (
   const ai = getAiClient();
   const evidenceData = await fetchEvidence(leadInfo);
 
-  // Hardcoded ID rules for the prompt
+  // Hardcoded ID rules for the prompt - AI MUST pick from these
   const levelTable = INFY_JOB_LEVELS.map(l => ({ id: l.job_level_id, label: l.label, numeric: l.job_level_numeric }));
   const taxonomyTable = INFY_FUNCTION_TAXONOMY.map(t => ({ id: t.function_taxonomy_id, f0: t.f0, f1: t.f1, role: t.job_role }));
   const industryTable = INFY_INDUSTRIES.map(i => ({ id: i.industry_id, name: i.industry_name }));
@@ -48,14 +49,17 @@ Stated Title: ${declaredTitle}
 
 EVIDENCE FROM WEB: ${JSON.stringify(evidenceData.results)}
 
-STRICT MAPPING TABLES (YOU MUST ONLY USE IDs FROM THESE TABLES):
-Levels (Hard Mappings):
-- VP / Vice President / President / EVP / SVP: MUST USE ID "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l" (Level 2)
-- Executive Director / Director: MUST USE ID "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6" (Level 3)
-Full Level Table: ${JSON.stringify(levelTable)}
+STRICT MAPPING RULES (PICK BEST FIT ID ONLY):
+Levels:
+- VP, SVP, EVP, Vice President: MUST USE ID "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l" (Level 2)
+- Executive Director, Director: MUST USE ID "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6" (Level 3)
+Full Level Options: ${JSON.stringify(levelTable)}
 
-Function Taxonomy Table: ${JSON.stringify(taxonomyTable)}
-Industry Table: ${JSON.stringify(industryTable)}
+Taxonomy:
+- Marketing roles MUST USE Marketing IDs, NEVER Sales IDs.
+Full Taxonomy Options: ${JSON.stringify(taxonomyTable)}
+
+Industry: ${JSON.stringify(industryTable)}
 `;
 
   const response = await ai.models.generateContent({
@@ -63,13 +67,12 @@ Industry Table: ${JSON.stringify(industryTable)}
     contents: resolutionPrompt,
     config: {
       systemInstruction: `You are a Deterministic Data Resolver.
-STRICT INSTRUCTIONS:
-1. DO NOT create new job levels or IDs.
-2. If the person is a Vice President (VP), EVP, or SVP, map to Level ID "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l" (Numeric 2).
-3. If the person is an Executive Director or Director, map to Level ID "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6" (Numeric 3).
-4. DO NOT map Marketing roles to Sales. Use the provided Marketing taxonomy IDs.
-5. Extract the LinkedIn URL from the grounded evidence.
-6. Resolve City, State, Country. ZIP must be valid (no 00000). Use Company HQ ZIP if specific location is unknown.`,
+STRICT PROTOCOLS:
+1. LINKEDIN: Extract the valid LinkedIn URL from the search evidence chunks. It must be a 'linkedin.com/in/' URL.
+2. NO HALLUCINATION: If evidence suggests they are a VP, map to ID "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l".
+3. NO HALLUCINATION: If evidence suggests they are an Executive Director, map to ID "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6".
+4. ZIP: Must be valid. Use company HQ ZIP if specific user ZIP is missing. Never return 00000.
+5. TAXONOMY: Map Marketing roles strictly to Marketing IDs.`,
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -100,6 +103,7 @@ STRICT INSTRUCTIONS:
 
   const intel = JSON.parse(response.text || "{}");
   
+  // Cross-reference back to constants to ensure absolute data integrity
   const levelMatch = INFY_JOB_LEVELS.find(l => l.job_level_id === intel.job_level_id);
   const funcMatch = INFY_FUNCTION_TAXONOMY.find(f => f.function_taxonomy_id === intel.function_taxonomy_id);
   const indMatch = INFY_INDUSTRIES.find(i => i.industry_id === intel.industry_id);

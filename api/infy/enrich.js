@@ -15,43 +15,39 @@ export default async function handler(req, res) {
     const { data: lead } = await supabase.from('infy_raw_leads').select('*').eq('id', raw_lead_id).single()
     if (!lead) throw new Error('Lead not found')
 
+    // Targeted LinkedIn Search
     const aiSearch = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: `Find the LinkedIn URL and bio for ${lead.first_name} ${lead.last_name} at ${lead.firm_name}.`,
       config: { 
         tools: [{ googleSearch: {} }],
-        systemInstruction: "Locate professional profile data. Prioritize LinkedIn."
+        systemInstruction: "Identify the professional LinkedIn URL from search results. Prioritize direct profile links."
       }
     });
 
     const snippets = aiSearch.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     
-    // Strict Hierarchical Mapping
+    // Strict Hierarchical Mapping Instructions
     const mappingRules = `
     MASTER ID RULES:
-    1. VP, SVP, EVP, President MUST MAP TO ID: "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l" (Level 2).
-    2. Executive Director, Director MUST MAP TO ID: "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6" (Level 3).
-    3. Founder, Owner, Board MUST MAP TO ID: "78207f2a-89b4-4b52-9599-236c5354924a" (Level 1).
-    4. Marketing must NOT be Sales.
+    - VP, SVP, EVP, Vice President: MUST MAP TO ID "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l" (Level 2).
+    - Executive Director, Director: MUST MAP TO ID "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6" (Level 3).
+    - Marketing roles MUST NOT be mapped to Sales.
     `;
 
     const resolution = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: `Analyze identity for ${lead.first_name} ${lead.last_name}. Mapping Instructions: ${mappingRules}. Evidence: ${JSON.stringify(snippets)}.`,
       config: {
-        systemInstruction: `Return JSON only.
-- VP MUST BE L2.
-- Executive Director MUST BE L3.
-- DO NOT map Marketing to Sales.
-- ZIP rules: No 00000. Fallback to HQ ZIP.`,
+        systemInstruction: "Return JSON. Select best fit IDs for Job Level, Taxonomy, and Industry. Extract direct LinkedIn URL.",
         responseMimeType: "application/json"
       }
     });
 
     const intel = JSON.parse(resolution.text || '{}');
-    const linkedinUrl = intel.linkedin_url || snippets.find(s => s.web?.uri?.includes("linkedin.com"))?.web?.uri || "";
+    const linkedinUrl = intel.linkedin_url || snippets.find(s => s.web?.uri?.includes("linkedin.com/in/"))?.web?.uri || "";
 
-    // Map numeric level based on the selected ID for database consistency
+    // Resolve numeric level from selected ID
     let numericLevel = 4;
     if (intel.job_level_id === "78207f2a-89b4-4b52-9599-236c5354924a") numericLevel = 1;
     else if (intel.job_level_id === "8c7d6e5a-4b3c-2d1a-9e8f-7g6h5i4j3k2l") numericLevel = 2;
@@ -67,13 +63,9 @@ export default async function handler(req, res) {
       standard_title: intel.standard_title || lead.declared_title || "",
       job_level: String(numericLevel),
       job_level_id: intel.job_level_id || "550e8400-e29b-41d4-a716-446655440000",
-      job_role: intel.job_role || "",
-      f0: intel.f0 || "",
-      f1: intel.f1 || "",
-      f2: intel.f2 || "",
       city: intel.location?.city || "Unknown",
       state: intel.location?.state || "Unknown",
-      zip: intel.location?.zip || "",
+      zip: (intel.location?.zip === '00000' ? "" : intel.location?.zip) || "",
       country: intel.location?.country || "United States",
       linkedin_url: linkedinUrl,
       intent_score: intel.confidence || 0,
